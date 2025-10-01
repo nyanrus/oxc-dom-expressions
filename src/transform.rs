@@ -6,7 +6,8 @@ use oxc_traverse::{Traverse, TraverseCtx};
 use std::collections::{HashMap, HashSet};
 
 use crate::options::DomExpressionsOptions;
-use crate::template::{build_template, Template};
+use crate::template::{build_template, SlotType, Template};
+use crate::utils::{is_component, should_delegate_event};
 
 /// The main DOM expressions transformer
 pub struct DomExpressions<'a> {
@@ -107,6 +108,20 @@ impl<'a> Traverse<'a> for DomExpressions<'a> {
     }
 
     fn enter_jsx_element(&mut self, elem: &mut JSXElement<'a>, _ctx: &mut TraverseCtx<'a>) {
+        // Check if this is a component or HTML element
+        let tag_name = match &elem.opening_element.name {
+            JSXElementName::Identifier(ident) => ident.name.as_str(),
+            JSXElementName::IdentifierReference(ident) => ident.name.as_str(),
+            _ => return, // Skip complex element names for now
+        };
+
+        // Components are handled differently
+        if is_component(tag_name) {
+            // Component handling - track that we need component imports
+            // For now, just skip transformation
+            return;
+        }
+
         // Handle JSX elements
         // Build a template from the JSX element
         let template = build_template(elem);
@@ -114,9 +129,40 @@ impl<'a> Traverse<'a> for DomExpressions<'a> {
         // Get or create template variable
         let _template_var = self.get_template_var(&template.html);
         
+        // Get effect wrapper name before borrowing self mutably
+        let effect_wrapper = self.options.effect_wrapper.clone();
+        let delegate_events = self.options.delegate_events;
+        
         // Track which imports are needed based on dynamic slots
-        if !template.dynamic_slots.is_empty() {
-            self.add_import("insert");
+        for slot in &template.dynamic_slots {
+            match &slot.slot_type {
+                SlotType::TextContent => {
+                    self.add_import("insert");
+                }
+                SlotType::Attribute(_) => {
+                    self.add_import("setAttribute");
+                    self.add_import(&effect_wrapper);
+                }
+                SlotType::EventHandler(event_name) => {
+                    if delegate_events && should_delegate_event(event_name) {
+                        self.add_delegated_event(event_name);
+                    }
+                }
+                SlotType::Ref => {
+                    // Ref doesn't need imports
+                }
+                SlotType::ClassList => {
+                    self.add_import("classList");
+                    self.add_import(&effect_wrapper);
+                }
+                SlotType::StyleObject => {
+                    self.add_import("style");
+                    self.add_import(&effect_wrapper);
+                }
+                SlotType::OnEvent(_) | SlotType::OnCaptureEvent(_) => {
+                    // These use direct addEventListener, no imports needed
+                }
+            }
         }
         
         // Store the template for later code generation
@@ -132,7 +178,14 @@ impl<'a> Traverse<'a> for DomExpressions<'a> {
     fn enter_jsx_fragment(&mut self, _frag: &mut JSXFragment<'a>, _ctx: &mut TraverseCtx<'a>) {
         // Handle JSX fragments
         // Fragments are converted to arrays in Solid
-        // For now, just track that we encountered one
+        // Track that we encountered one and may need special handling
+        
+        // In a full implementation, we would:
+        // 1. Process each child of the fragment
+        // 2. Wrap them in an array
+        // 3. Handle dynamic children appropriately
+        
+        // For now, just note that fragments are being tracked
     }
 
     fn enter_jsx_opening_element(

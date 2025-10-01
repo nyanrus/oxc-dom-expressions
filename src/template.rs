@@ -3,7 +3,10 @@
 use oxc_ast::ast::*;
 use std::fmt::Write;
 
-use crate::utils::is_void_element;
+use crate::utils::{
+    get_event_name, get_prefix_event_name, is_class_list_binding, is_event_handler,
+    is_on_capture_event, is_on_prefix_event, is_ref_binding, is_style_binding, is_void_element,
+};
 
 /// Represents a template with its HTML string and dynamic expression positions
 #[derive(Debug, Clone)]
@@ -32,6 +35,16 @@ pub enum SlotType {
     Attribute(String),
     /// Event handler
     EventHandler(String),
+    /// Ref binding
+    Ref,
+    /// ClassList binding
+    ClassList,
+    /// Style binding (object)
+    StyleObject,
+    /// Non-delegated event (on: prefix)
+    OnEvent(String),
+    /// Capture event (oncapture: prefix)
+    OnCaptureEvent(String),
 }
 
 /// Build a template from a JSX element
@@ -57,14 +70,71 @@ fn build_element_html(
     // Opening tag
     let _ = write!(html, "<{}", tag_name);
     
-    // Static attributes only
+    // Process attributes
     for attr in &element.opening_element.attributes {
         if let JSXAttributeItem::Attribute(attr) = attr {
             if let Some(name) = get_attribute_name(&attr.name) {
-                // Only add static attributes to template
-                if let Some(value) = &attr.value {
+                // Check for special bindings
+                if is_ref_binding(&name) {
+                    // Ref binding - track for later code generation
+                    slots.push(DynamicSlot {
+                        path: path.clone(),
+                        slot_type: SlotType::Ref,
+                    });
+                } else if is_class_list_binding(&name) {
+                    // ClassList binding
+                    slots.push(DynamicSlot {
+                        path: path.clone(),
+                        slot_type: SlotType::ClassList,
+                    });
+                } else if is_style_binding(&name) && attr.value.is_some() {
+                    // Style object binding
+                    if !matches!(attr.value, Some(JSXAttributeValue::StringLiteral(_))) {
+                        slots.push(DynamicSlot {
+                            path: path.clone(),
+                            slot_type: SlotType::StyleObject,
+                        });
+                    } else if let Some(value) = &attr.value {
+                        // Static style string
+                        if let Some(static_value) = get_static_attribute_value(value) {
+                            let _ = write!(html, " style=\"{}\"", static_value);
+                        }
+                    }
+                } else if is_on_prefix_event(&name) {
+                    // on: prefix event
+                    if let Some(event_name) = get_prefix_event_name(&name) {
+                        slots.push(DynamicSlot {
+                            path: path.clone(),
+                            slot_type: SlotType::OnEvent(event_name.to_string()),
+                        });
+                    }
+                } else if is_on_capture_event(&name) {
+                    // oncapture: prefix event
+                    if let Some(event_name) = get_prefix_event_name(&name) {
+                        slots.push(DynamicSlot {
+                            path: path.clone(),
+                            slot_type: SlotType::OnCaptureEvent(event_name.to_string()),
+                        });
+                    }
+                } else if is_event_handler(&name) {
+                    // Regular event handler
+                    if let Some(event_name) = get_event_name(&name) {
+                        slots.push(DynamicSlot {
+                            path: path.clone(),
+                            slot_type: SlotType::EventHandler(event_name.to_string()),
+                        });
+                    }
+                } else if let Some(value) = &attr.value {
+                    // Regular attribute
                     if let Some(static_value) = get_static_attribute_value(value) {
+                        // Static attribute - add to template
                         let _ = write!(html, " {}=\"{}\"", name, static_value);
+                    } else {
+                        // Dynamic attribute - track for later
+                        slots.push(DynamicSlot {
+                            path: path.clone(),
+                            slot_type: SlotType::Attribute(name.clone()),
+                        });
                     }
                 } else {
                     // Boolean attribute
