@@ -4,7 +4,9 @@
 //!
 //! This plugin transforms JSX into efficient DOM operations for fine-grained reactive libraries like Solid.js.
 
+mod codegen;
 mod options;
+mod template;
 mod transform;
 mod utils;
 

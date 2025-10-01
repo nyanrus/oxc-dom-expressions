@@ -67,6 +67,44 @@ pub fn should_delegate_event(event_name: &str) -> bool
 pub fn is_void_element(tag_name: &str) -> bool
 ```
 
+### 4. Template Generation (`src/template.rs`)
+
+Functions for building HTML templates from JSX:
+
+```rust
+pub struct Template {
+    pub html: String,
+    pub dynamic_slots: Vec<DynamicSlot>,
+}
+
+pub fn build_template(element: &JSXElement) -> Template
+```
+
+**Key features:**
+- Extracts static HTML structure from JSX elements
+- Tracks positions where dynamic content should be inserted
+- Handles nested elements and attributes
+- Optimizes template strings for cloning
+
+### 5. Code Generation (`src/codegen.rs`)
+
+Utilities for generating runtime DOM manipulation code:
+
+```rust
+pub fn generate_clone_code(template_var: &str, element_var: &str) -> String
+pub fn generate_element_ref(base_var: &str, path: &[String]) -> String
+pub fn generate_insert_code(options: &DomExpressionsOptions, element_ref: &str, expression: &str) -> String
+pub fn generate_set_attribute_code(...) -> String
+pub fn generate_event_handler_code(...) -> String
+pub fn generate_template_transformation(template: &Template, template_var: &str, options: &DomExpressionsOptions) -> String
+```
+
+**Key features:**
+- Generates efficient DOM cloning code
+- Creates element references using firstChild/nextSibling traversal
+- Wraps dynamic expressions with insert/effect functions
+- Handles event delegation and direct event listeners
+
 ## Transformation Pipeline
 
 The transformation follows this flow:
@@ -176,11 +214,11 @@ Legend:
 - [x] Traverse hooks
 - [x] Basic tests
 
-### Phase 2: Core Transformation (Planned)
-- [ ] Template string generation
-- [ ] Element cloning code
-- [ ] Property/attribute setters
-- [ ] Dynamic expression wrapping
+### Phase 2: Core Transformation ✅
+- [x] Template string generation
+- [x] Element cloning code
+- [x] Property/attribute setters
+- [x] Dynamic expression wrapping
 
 ### Phase 3: Advanced Features (Planned)
 - [ ] Event delegation
