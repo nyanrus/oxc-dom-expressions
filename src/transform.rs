@@ -96,4 +96,3 @@ impl<'a> Traverse<'a> for DomExpressions<'a> {
         // 3. Check for static marker comments
     }
 }
-

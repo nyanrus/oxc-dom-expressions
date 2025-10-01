@@ -8,9 +8,8 @@ mod options;
 mod transform;
 mod utils;
 
-pub use options::DomExpressionsOptions;
+pub use options::{DomExpressionsOptions, GenerateMode};
 pub use transform::DomExpressions;
 
 #[cfg(test)]
 mod tests;
-

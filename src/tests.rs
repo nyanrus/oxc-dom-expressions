@@ -17,9 +17,8 @@ mod integration_tests {
 
     #[test]
     fn test_custom_options() {
-        let options = DomExpressionsOptions::new("custom-runtime")
-            .with_delegate_events(false);
-        
+        let options = DomExpressionsOptions::new("custom-runtime").with_delegate_events(false);
+
         assert_eq!(options.module_name, "custom-runtime");
         assert!(!options.delegate_events);
     }
@@ -29,7 +28,7 @@ mod integration_tests {
         let allocator = Allocator::default();
         let options = DomExpressionsOptions::default();
         let transformer = DomExpressions::new(&allocator, options);
-        
+
         assert_eq!(transformer.options().module_name, "solid-js/web");
     }
 }

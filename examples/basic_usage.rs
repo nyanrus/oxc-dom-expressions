@@ -19,17 +19,19 @@ fn main() {
 
     // Create transformer with default options
     let transformer = DomExpressions::new(&allocator, options);
-    println!("Transformer created with module: {}", transformer.options().module_name);
+    println!(
+        "Transformer created with module: {}",
+        transformer.options().module_name
+    );
     println!();
 
     // Example with custom configuration
-    let custom_options = DomExpressionsOptions::new("custom-runtime")
-        .with_delegate_events(false);
-    
+    let custom_options = DomExpressionsOptions::new("custom-runtime").with_delegate_events(false);
+
     println!("Custom configuration:");
     println!("  Module name: {}", custom_options.module_name);
     println!("  Delegate events: {}", custom_options.delegate_events);
-    
+
     let _custom_transformer = DomExpressions::new(&allocator, custom_options);
     println!();
 
