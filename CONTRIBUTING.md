@@ -122,13 +122,13 @@ The following features are planned for implementation:
 - [ ] Property/attribute setters
 - [ ] Dynamic expression wrapping
 
-### Phase 3: Advanced Features (TODO)
-- [ ] Event delegation
-- [ ] Special bindings (ref, classList, style)
-- [ ] Component handling
-- [ ] Fragment support
-- [ ] Import injection
-- [ ] SSR mode
+### Phase 3: Advanced Features ✅
+- [x] Event delegation
+- [x] Special bindings (ref, classList, style)
+- [x] Component handling
+- [x] Fragment support
+- [x] Import injection
+- [x] SSR mode
 
 ### Phase 4: Optimization (TODO)
 - [ ] Template deduplication
