@@ -1,0 +1,26 @@
+[package]
+name = "oxc-dom-expressions"
+version = "0.1.0"
+edition = "2021"
+authors = ["nyanrus"]
+license = "MIT"
+description = "A drop-in replacement of babel-plugin-jsx-dom-expressions for solid-js implemented with oxc in Rust"
+repository = "https://github.com/nyanrus/oxc-dom-expressions"
+keywords = ["jsx", "solid", "dom", "oxc", "transformer"]
+categories = ["development-tools"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+oxc_allocator = "0.40"
+oxc_ast = "0.40"
+oxc_span = "0.40"
+oxc_traverse = "0.40"
+oxc_syntax = "0.40"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[dev-dependencies]
+oxc_parser = "0.40"
+oxc_semantic = "0.40"
