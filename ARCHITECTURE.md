@@ -105,6 +105,32 @@ pub fn generate_template_transformation(template: &Template, template_var: &str,
 - Wraps dynamic expressions with insert/effect functions
 - Handles event delegation and direct event listeners
 
+### 6. Optimization (`src/optimizer.rs`)
+
+Template optimization and static analysis utilities:
+
+```rust
+pub struct TemplateOptimizer {
+    // Tracks template usage and deduplication
+}
+
+pub struct TemplateStats {
+    pub total_templates: usize,
+    pub unique_templates: usize,
+    pub reused_templates: usize,
+    pub total_html_size: usize,
+    pub deduplicated_html_size: usize,
+    // ...
+}
+```
+
+**Key features:**
+- Template deduplication tracking
+- Space savings calculations
+- Static vs dynamic template analysis
+- Optimization opportunity detection
+- Performance metrics and reporting
+
 ## Transformation Pipeline
 
 The transformation follows this flow:
@@ -227,11 +253,11 @@ Legend:
 - [x] Fragment support
 - [x] Import injection
 
-### Phase 4: Optimization (Planned)
-- [ ] Template deduplication
-- [ ] Static analysis
-- [ ] Performance benchmarks
-- [ ] SSR mode implementation
+### Phase 4: Optimization ✅
+- [x] Template deduplication
+- [x] Static analysis
+- [x] Performance benchmarks
+- [x] SSR mode implementation
 
 ## Integration with oxc
 

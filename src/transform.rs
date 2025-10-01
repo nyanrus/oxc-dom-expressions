@@ -5,12 +5,14 @@ use oxc_ast::ast::*;
 use oxc_traverse::{Traverse, TraverseCtx};
 use std::collections::{HashMap, HashSet};
 
+use crate::optimizer::{TemplateOptimizer, TemplateStats};
 use crate::options::DomExpressionsOptions;
 use crate::template::{build_template, SlotType, Template};
 use crate::utils::{is_component, should_delegate_event};
 
 /// The main DOM expressions transformer
 pub struct DomExpressions<'a> {
+    #[allow(dead_code)]
     allocator: &'a Allocator,
     options: DomExpressionsOptions,
     /// Collection of templates generated during transformation
@@ -25,6 +27,8 @@ pub struct DomExpressions<'a> {
     required_imports: HashSet<String>,
     /// Set of events that need delegation
     delegated_events: HashSet<String>,
+    /// Optimizer for template analysis
+    optimizer: TemplateOptimizer,
 }
 
 impl<'a> DomExpressions<'a> {
@@ -39,12 +43,23 @@ impl<'a> DomExpressions<'a> {
             element_counter: 0,
             required_imports: HashSet::new(),
             delegated_events: HashSet::new(),
+            optimizer: TemplateOptimizer::new(),
         }
     }
 
     /// Get the current options
     pub fn options(&self) -> &DomExpressionsOptions {
         &self.options
+    }
+
+    /// Get template statistics for optimization analysis
+    pub fn get_template_stats(&self) -> TemplateStats {
+        self.optimizer.get_stats()
+    }
+
+    /// Get list of templates that were reused (deduplicated)
+    pub fn get_reused_templates(&self) -> Vec<(String, usize)> {
+        self.optimizer.get_reused_templates()
     }
 
     /// Generate a unique template variable name
@@ -125,6 +140,9 @@ impl<'a> Traverse<'a> for DomExpressions<'a> {
         // Handle JSX elements
         // Build a template from the JSX element
         let template = build_template(elem);
+        
+        // Record template for optimization analysis
+        self.optimizer.record_template(template.clone());
         
         // Get or create template variable
         let _template_var = self.get_template_var(&template.html);

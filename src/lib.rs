@@ -6,11 +6,13 @@
 
 pub mod codegen;
 mod options;
+pub mod optimizer;
 pub mod template;
 mod transform;
 pub mod utils;
 
 pub use options::{DomExpressionsOptions, GenerateMode};
+pub use optimizer::{Optimization, OptimizationKind, TemplateOptimizer, TemplateStats};
 pub use transform::DomExpressions;
 
 #[cfg(test)]

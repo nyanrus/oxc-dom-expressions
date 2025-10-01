@@ -259,9 +259,41 @@ This implementation provides core transformation infrastructure for babel-plugin
 - ✅ on: and oncapture: event prefixes
 - ✅ Component detection and handling
 - ✅ Fragment support
+- ✅ Template deduplication optimization
+- ✅ Static analysis and performance metrics
+- ✅ Benchmark suite
+- ✅ SSR mode optimization
 - ⚠️ Full AST replacement (in progress)
 - ⚠️ Import injection (planned)
 - ⚠️ Complete code generation (planned)
+
+## Performance
+
+Phase 4 introduces comprehensive optimization features:
+
+### Template Deduplication
+Identical templates are automatically deduplicated, reducing memory usage and bundle size:
+```rust
+let stats = transformer.get_template_stats();
+println!("Space saved: {} bytes", stats.space_saved());
+println!("Deduplication ratio: {:.1}%", stats.deduplication_ratio() * 100.0);
+```
+
+### Static Analysis
+Track static vs dynamic templates for optimization opportunities:
+```rust
+let stats = transformer.get_template_stats();
+println!("Static templates: {}", stats.static_templates);
+println!("Dynamic templates: {}", stats.dynamic_templates);
+```
+
+### Benchmarks
+Run performance benchmarks to measure transformation speed:
+```bash
+cargo bench
+```
+
+See `examples/phase4_demo.rs` for a complete demonstration of optimization features.
 
 ## Contributing
 

@@ -24,3 +24,8 @@ serde_json = "1.0"
 [dev-dependencies]
 oxc_parser = "0.40"
 oxc_semantic = "0.40"
+criterion = "0.5"
+
+[[bench]]
+name = "transformation_bench"
+harness = false
