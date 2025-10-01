@@ -1,0 +1,16 @@
+//! # oxc-dom-expressions
+//!
+//! A drop-in replacement of babel-plugin-jsx-dom-expressions for solid-js implemented with oxc in Rust.
+//!
+//! This plugin transforms JSX into efficient DOM operations for fine-grained reactive libraries like Solid.js.
+
+mod options;
+mod transform;
+mod utils;
+
+pub use options::DomExpressionsOptions;
+pub use transform::DomExpressions;
+
+#[cfg(test)]
+mod tests;
+
