@@ -103,12 +103,11 @@ fn test_simple_elements() {
     
     match transform_jsx(&code) {
         Ok(actual) => {
-            // Compare outputs - test passes even if outputs differ (for now)
-            compare_outputs(&actual, &expected, "simple_elements");
+            let matches = compare_outputs(&actual, &expected, "simple_elements");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: simple_elements");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: simple_elements\nParse/transform error: {}", e);
         }
     }
 }
@@ -120,11 +119,11 @@ fn test_event_expressions() {
     
     match transform_jsx(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "event_expressions");
+            let matches = compare_outputs(&actual, &expected, "event_expressions");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: event_expressions");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: event_expressions\nParse/transform error: {}", e);
         }
     }
 }
@@ -136,11 +135,11 @@ fn test_attribute_expressions() {
     
     match transform_jsx(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "attribute_expressions");
+            let matches = compare_outputs(&actual, &expected, "attribute_expressions");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: attribute_expressions");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: attribute_expressions\nParse/transform error: {}", e);
         }
     }
 }
@@ -152,11 +151,11 @@ fn test_fragments() {
     
     match transform_jsx(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "fragments");
+            let matches = compare_outputs(&actual, &expected, "fragments");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: fragments");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: fragments\nParse/transform error: {}", e);
         }
     }
 }
@@ -168,11 +167,11 @@ fn test_text_interpolation() {
     
     match transform_jsx(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "text_interpolation");
+            let matches = compare_outputs(&actual, &expected, "text_interpolation");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: text_interpolation");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: text_interpolation\nParse/transform error: {}", e);
         }
     }
 }
@@ -184,11 +183,11 @@ fn test_components() {
     
     match transform_jsx(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "components");
+            let matches = compare_outputs(&actual, &expected, "components");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: components");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: components\nParse/transform error: {}", e);
         }
     }
 }
@@ -200,11 +199,11 @@ fn test_conditional_expressions() {
     
     match transform_jsx(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "conditional_expressions");
+            let matches = compare_outputs(&actual, &expected, "conditional_expressions");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: conditional_expressions");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: conditional_expressions\nParse/transform error: {}", e);
         }
     }
 }
@@ -216,11 +215,11 @@ fn test_insert_children() {
     
     match transform_jsx(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "insert_children");
+            let matches = compare_outputs(&actual, &expected, "insert_children");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: insert_children");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: insert_children\nParse/transform error: {}", e);
         }
     }
 }
@@ -232,11 +231,11 @@ fn test_custom_elements() {
     
     match transform_jsx(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "custom_elements");
+            let matches = compare_outputs(&actual, &expected, "custom_elements");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: custom_elements");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: custom_elements\nParse/transform error: {}", e);
         }
     }
 }
@@ -248,11 +247,11 @@ fn test_svg() {
     
     match transform_jsx(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "svg");
+            let matches = compare_outputs(&actual, &expected, "svg");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: svg");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: svg\nParse/transform error: {}", e);
         }
     }
 }
@@ -264,11 +263,11 @@ fn test_namespace_elements() {
     
     match transform_jsx(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "namespace_elements");
+            let matches = compare_outputs(&actual, &expected, "namespace_elements");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: namespace_elements");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: namespace_elements\nParse/transform error: {}", e);
         }
     }
 }

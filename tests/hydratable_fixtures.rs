@@ -101,11 +101,11 @@ fn test_hydratable_simple_elements() {
     
     match transform_jsx_hydratable(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "simple_elements");
+            let matches = compare_outputs(&actual, &expected, "simple_elements");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: simple_elements (Hydratable)");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: simple_elements (Hydratable)\nParse/transform error: {}", e);
         }
     }
 }
@@ -117,11 +117,11 @@ fn test_hydratable_event_expressions() {
     
     match transform_jsx_hydratable(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "event_expressions");
+            let matches = compare_outputs(&actual, &expected, "event_expressions");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: event_expressions (Hydratable)");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: event_expressions (Hydratable)\nParse/transform error: {}", e);
         }
     }
 }
@@ -133,11 +133,11 @@ fn test_hydratable_attribute_expressions() {
     
     match transform_jsx_hydratable(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "attribute_expressions");
+            let matches = compare_outputs(&actual, &expected, "attribute_expressions");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: attribute_expressions (Hydratable)");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: attribute_expressions (Hydratable)\nParse/transform error: {}", e);
         }
     }
 }
@@ -149,11 +149,11 @@ fn test_hydratable_fragments() {
     
     match transform_jsx_hydratable(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "fragments");
+            let matches = compare_outputs(&actual, &expected, "fragments");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: fragments (Hydratable)");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: fragments (Hydratable)\nParse/transform error: {}", e);
         }
     }
 }
@@ -165,11 +165,11 @@ fn test_hydratable_text_interpolation() {
     
     match transform_jsx_hydratable(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "text_interpolation");
+            let matches = compare_outputs(&actual, &expected, "text_interpolation");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: text_interpolation (Hydratable)");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: text_interpolation (Hydratable)\nParse/transform error: {}", e);
         }
     }
 }
@@ -181,11 +181,11 @@ fn test_hydratable_components() {
     
     match transform_jsx_hydratable(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "components");
+            let matches = compare_outputs(&actual, &expected, "components");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: components (Hydratable)");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: components (Hydratable)\nParse/transform error: {}", e);
         }
     }
 }
@@ -197,11 +197,11 @@ fn test_hydratable_conditional_expressions() {
     
     match transform_jsx_hydratable(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "conditional_expressions");
+            let matches = compare_outputs(&actual, &expected, "conditional_expressions");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: conditional_expressions (Hydratable)");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: conditional_expressions (Hydratable)\nParse/transform error: {}", e);
         }
     }
 }
@@ -213,11 +213,11 @@ fn test_hydratable_insert_children() {
     
     match transform_jsx_hydratable(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "insert_children");
+            let matches = compare_outputs(&actual, &expected, "insert_children");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: insert_children (Hydratable)");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: insert_children (Hydratable)\nParse/transform error: {}", e);
         }
     }
 }
@@ -229,11 +229,11 @@ fn test_hydratable_custom_elements() {
     
     match transform_jsx_hydratable(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "custom_elements");
+            let matches = compare_outputs(&actual, &expected, "custom_elements");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: custom_elements (Hydratable)");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: custom_elements (Hydratable)\nParse/transform error: {}", e);
         }
     }
 }
@@ -245,11 +245,11 @@ fn test_hydratable_svg() {
     
     match transform_jsx_hydratable(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "svg");
+            let matches = compare_outputs(&actual, &expected, "svg");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: svg (Hydratable)");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: svg (Hydratable)\nParse/transform error: {}", e);
         }
     }
 }
@@ -261,11 +261,11 @@ fn test_hydratable_flags() {
     
     match transform_jsx_hydratable(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "flags");
+            let matches = compare_outputs(&actual, &expected, "flags");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: flags (Hydratable)");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: flags (Hydratable)\nParse/transform error: {}", e);
         }
     }
 }
@@ -277,11 +277,11 @@ fn test_hydratable_document() {
     
     match transform_jsx_hydratable(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "document");
+            let matches = compare_outputs(&actual, &expected, "document");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: document (Hydratable)");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: document (Hydratable)\nParse/transform error: {}", e);
         }
     }
 }

@@ -101,11 +101,11 @@ fn test_ssr_simple_elements() {
     
     match transform_jsx_ssr(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "simple_elements");
+            let matches = compare_outputs(&actual, &expected, "simple_elements");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: simple_elements (SSR)");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: simple_elements (SSR)\nParse/transform error: {}", e);
         }
     }
 }
@@ -117,11 +117,11 @@ fn test_ssr_attribute_expressions() {
     
     match transform_jsx_ssr(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "attribute_expressions");
+            let matches = compare_outputs(&actual, &expected, "attribute_expressions");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: attribute_expressions (SSR)");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: attribute_expressions (SSR)\nParse/transform error: {}", e);
         }
     }
 }
@@ -133,11 +133,11 @@ fn test_ssr_fragments() {
     
     match transform_jsx_ssr(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "fragments");
+            let matches = compare_outputs(&actual, &expected, "fragments");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: fragments (SSR)");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: fragments (SSR)\nParse/transform error: {}", e);
         }
     }
 }
@@ -149,11 +149,11 @@ fn test_ssr_text_interpolation() {
     
     match transform_jsx_ssr(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "text_interpolation");
+            let matches = compare_outputs(&actual, &expected, "text_interpolation");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: text_interpolation (SSR)");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: text_interpolation (SSR)\nParse/transform error: {}", e);
         }
     }
 }
@@ -165,11 +165,11 @@ fn test_ssr_components() {
     
     match transform_jsx_ssr(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "components");
+            let matches = compare_outputs(&actual, &expected, "components");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: components (SSR)");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: components (SSR)\nParse/transform error: {}", e);
         }
     }
 }
@@ -181,11 +181,11 @@ fn test_ssr_conditional_expressions() {
     
     match transform_jsx_ssr(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "conditional_expressions");
+            let matches = compare_outputs(&actual, &expected, "conditional_expressions");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: conditional_expressions (SSR)");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: conditional_expressions (SSR)\nParse/transform error: {}", e);
         }
     }
 }
@@ -197,11 +197,11 @@ fn test_ssr_insert_children() {
     
     match transform_jsx_ssr(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "insert_children");
+            let matches = compare_outputs(&actual, &expected, "insert_children");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: insert_children (SSR)");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: insert_children (SSR)\nParse/transform error: {}", e);
         }
     }
 }
@@ -213,11 +213,11 @@ fn test_ssr_custom_elements() {
     
     match transform_jsx_ssr(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "custom_elements");
+            let matches = compare_outputs(&actual, &expected, "custom_elements");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: custom_elements (SSR)");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: custom_elements (SSR)\nParse/transform error: {}", e);
         }
     }
 }
@@ -229,11 +229,11 @@ fn test_ssr_svg() {
     
     match transform_jsx_ssr(&code) {
         Ok(actual) => {
-            compare_outputs(&actual, &expected, "svg");
+            let matches = compare_outputs(&actual, &expected, "svg");
+            assert!(matches, "Output does not match expected result");
         }
         Err(e) => {
-            println!("❌ TEST FAILED: svg (SSR)");
-            println!("Parse/transform error: {}", e);
+            panic!("❌ TEST FAILED: svg (SSR)\nParse/transform error: {}", e);
         }
     }
 }
