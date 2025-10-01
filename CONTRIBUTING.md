@@ -130,10 +130,49 @@ The following features are planned for implementation:
 - [x] Import injection
 - [x] SSR mode
 
-### Phase 4: Optimization (TODO)
-- [ ] Template deduplication
-- [ ] Static analysis improvements
-- [ ] Performance benchmarks
+### Phase 4: Optimization ✅
+- [x] Template deduplication
+- [x] Static analysis improvements
+- [x] Performance benchmarks
+
+## Performance Testing
+
+### Running Benchmarks
+
+To measure transformation performance:
+
+```bash
+# Compile benchmarks
+cargo bench --no-run
+
+# Run all benchmarks
+cargo bench
+
+# Run specific benchmark
+cargo bench simple_element
+```
+
+### Analyzing Optimization
+
+To analyze template optimization:
+
+```rust
+let mut transformer = DomExpressions::new(&allocator, options);
+// ... perform transformation ...
+
+// Get statistics
+let stats = transformer.get_template_stats();
+println!("Deduplication ratio: {:.1}%", stats.deduplication_ratio() * 100.0);
+println!("Space saved: {} bytes", stats.space_saved());
+
+// Get reused templates
+let reused = transformer.get_reused_templates();
+for (html, count) in reused {
+    println!("Used {} times: {}", count, html);
+}
+```
+
+See `examples/phase4_demo.rs` for more examples.
 
 ## Getting Help
 
