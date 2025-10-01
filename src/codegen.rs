@@ -94,6 +94,58 @@ pub fn generate_event_handler_code(
     }
 }
 
+/// Generate code for ref binding
+pub fn generate_ref_code(element_ref: &str, ref_expr: &str) -> String {
+    format!(
+        "typeof {} === 'function' ? {}({}) : {} = {}",
+        ref_expr, ref_expr, element_ref, ref_expr, element_ref
+    )
+}
+
+/// Generate code for classList binding
+pub fn generate_class_list_code(
+    element_ref: &str,
+    class_list_expr: &str,
+    options: &DomExpressionsOptions,
+) -> String {
+    format!(
+        "{}(() => classList({}, {}))",
+        options.effect_wrapper, element_ref, class_list_expr
+    )
+}
+
+/// Generate code for style object binding
+pub fn generate_style_code(
+    element_ref: &str,
+    style_expr: &str,
+    options: &DomExpressionsOptions,
+) -> String {
+    format!(
+        "{}(() => style({}, {}))",
+        options.effect_wrapper, element_ref, style_expr
+    )
+}
+
+/// Generate code for on: prefix event (non-delegated)
+pub fn generate_on_event_code(element_ref: &str, event_name: &str, handler: &str) -> String {
+    format!(
+        "{}.addEventListener(\"{}\", {})",
+        element_ref,
+        event_name,
+        handler
+    )
+}
+
+/// Generate code for oncapture: prefix event
+pub fn generate_on_capture_code(element_ref: &str, event_name: &str, handler: &str) -> String {
+    format!(
+        "{}.addEventListener(\"{}\", {}, {{ capture: true }})",
+        element_ref,
+        event_name,
+        handler
+    )
+}
+
 /// Generate the complete transformation for a template
 pub fn generate_template_transformation(
     template: &Template,
@@ -149,6 +201,46 @@ pub fn generate_template_transformation(
                     code,
                     "  {}.$$click = {{/* handler */}};",
                     element_ref
+                );
+            }
+            SlotType::Ref => {
+                let _ = writeln!(
+                    code,
+                    "  typeof {{/* ref */}} === 'function' ? {{/* ref */}}({}) : {{/* ref */}} = {};",
+                    element_ref,
+                    element_ref
+                );
+            }
+            SlotType::ClassList => {
+                let _ = writeln!(
+                    code,
+                    "  {}(() => classList({}, {{/* classList */}}));",
+                    options.effect_wrapper,
+                    element_ref
+                );
+            }
+            SlotType::StyleObject => {
+                let _ = writeln!(
+                    code,
+                    "  {}(() => style({}, {{/* style */}}));",
+                    options.effect_wrapper,
+                    element_ref
+                );
+            }
+            SlotType::OnEvent(event_name) => {
+                let _ = writeln!(
+                    code,
+                    "  {}.addEventListener(\"{}\", {{/* handler */}});",
+                    element_ref,
+                    event_name
+                );
+            }
+            SlotType::OnCaptureEvent(event_name) => {
+                let _ = writeln!(
+                    code,
+                    "  {}.addEventListener(\"{}\", {{/* handler */}}, {{ capture: true }});",
+                    element_ref,
+                    event_name
                 );
             }
         }

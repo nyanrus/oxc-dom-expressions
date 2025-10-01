@@ -21,13 +21,57 @@ pub fn is_event_handler(attr_name: &str) -> bool {
 }
 
 /// Get the event name from an event handler attribute
-#[allow(dead_code)] // Used by full implementation
 pub fn get_event_name(attr_name: &str) -> Option<&str> {
     if is_event_handler(attr_name) {
         Some(&attr_name[2..])
     } else {
         None
     }
+}
+
+/// Check if an attribute is a ref binding
+pub fn is_ref_binding(attr_name: &str) -> bool {
+    attr_name == "ref"
+}
+
+/// Check if an attribute is a classList binding
+pub fn is_class_list_binding(attr_name: &str) -> bool {
+    attr_name == "classList"
+}
+
+/// Check if an attribute is a style binding
+pub fn is_style_binding(attr_name: &str) -> bool {
+    attr_name == "style" && !attr_name.starts_with("style:")
+}
+
+/// Check if an attribute uses on: prefix (non-delegated event)
+pub fn is_on_prefix_event(attr_name: &str) -> bool {
+    attr_name.starts_with("on:") && attr_name.len() > 3
+}
+
+/// Check if an attribute uses oncapture: prefix
+pub fn is_on_capture_event(attr_name: &str) -> bool {
+    attr_name.starts_with("oncapture:") && attr_name.len() > 10
+}
+
+/// Get event name from on: or oncapture: prefix
+pub fn get_prefix_event_name(attr_name: &str) -> Option<&str> {
+    if let Some(rest) = attr_name.strip_prefix("on:") {
+        Some(rest)
+    } else if let Some(rest) = attr_name.strip_prefix("oncapture:") {
+        Some(rest)
+    } else {
+        None
+    }
+}
+
+/// Check if an attribute is a special binding that needs special handling
+pub fn is_special_binding(attr_name: &str) -> bool {
+    is_ref_binding(attr_name)
+        || is_class_list_binding(attr_name)
+        || is_style_binding(attr_name)
+        || is_on_prefix_event(attr_name)
+        || is_on_capture_event(attr_name)
 }
 
 /// Check if an event should be delegated
@@ -132,5 +176,33 @@ mod tests {
         assert!(is_void_element("input"));
         assert!(!is_void_element("div"));
         assert!(!is_void_element("span"));
+    }
+
+    #[test]
+    fn test_special_bindings() {
+        assert!(is_ref_binding("ref"));
+        assert!(!is_ref_binding("class"));
+
+        assert!(is_class_list_binding("classList"));
+        assert!(!is_class_list_binding("class"));
+
+        assert!(is_style_binding("style"));
+        assert!(!is_style_binding("style:color"));
+
+        assert!(is_on_prefix_event("on:CustomEvent"));
+        assert!(!is_on_prefix_event("onClick"));
+
+        assert!(is_on_capture_event("oncapture:Click"));
+        assert!(!is_on_capture_event("onClick"));
+
+        assert_eq!(get_prefix_event_name("on:CustomEvent"), Some("CustomEvent"));
+        assert_eq!(get_prefix_event_name("oncapture:Click"), Some("Click"));
+        assert_eq!(get_prefix_event_name("onClick"), None);
+
+        assert!(is_special_binding("ref"));
+        assert!(is_special_binding("classList"));
+        assert!(is_special_binding("style"));
+        assert!(is_special_binding("on:CustomEvent"));
+        assert!(!is_special_binding("class"));
     }
 }

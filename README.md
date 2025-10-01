@@ -254,9 +254,14 @@ This implementation provides core transformation infrastructure for babel-plugin
 - ✅ Template string generation from JSX
 - ✅ Code generation for DOM manipulation
 - ✅ State management for templates and imports
+- ✅ Event delegation support
+- ✅ Special bindings (ref, classList, style)
+- ✅ on: and oncapture: event prefixes
+- ✅ Component detection and handling
+- ✅ Fragment support
 - ⚠️ Full AST replacement (in progress)
 - ⚠️ Import injection (planned)
-- ⚠️ Event delegation implementation (planned)
+- ⚠️ Complete code generation (planned)
 
 ## Contributing
 

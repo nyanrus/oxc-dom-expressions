@@ -4,11 +4,11 @@
 //!
 //! This plugin transforms JSX into efficient DOM operations for fine-grained reactive libraries like Solid.js.
 
-mod codegen;
+pub mod codegen;
 mod options;
-mod template;
+pub mod template;
 mod transform;
-mod utils;
+pub mod utils;
 
 pub use options::{DomExpressionsOptions, GenerateMode};
 pub use transform::DomExpressions;
