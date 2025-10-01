@@ -245,15 +245,18 @@ JSX Fragments with `<></>` notation are compiled to arrays:
 
 ## Development Status
 
-This is an initial implementation providing the core architecture and API compatibility with babel-plugin-jsx-dom-expressions. The transformer implements the basic structure with hooks for:
+This implementation provides core transformation infrastructure for babel-plugin-jsx-dom-expressions compatibility:
 
 - ✅ Configuration options matching the babel plugin
 - ✅ JSX element and fragment traversal hooks
 - ✅ Event handler detection and delegation logic
 - ✅ Utility functions for element type detection
-- ⚠️ Full AST transformation (planned)
-- ⚠️ Template generation (planned)
+- ✅ Template string generation from JSX
+- ✅ Code generation for DOM manipulation
+- ✅ State management for templates and imports
+- ⚠️ Full AST replacement (in progress)
 - ⚠️ Import injection (planned)
+- ⚠️ Event delegation implementation (planned)
 
 ## Contributing
 
