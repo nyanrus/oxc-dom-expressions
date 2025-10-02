@@ -49,11 +49,17 @@ pub enum SlotType {
 
 /// Build a template from a JSX element
 pub fn build_template(element: &JSXElement) -> Template {
+    build_template_with_options(element, None)
+}
+
+/// Build a template from a JSX element with options
+pub fn build_template_with_options(element: &JSXElement, _options: Option<&crate::options::DomExpressionsOptions>) -> Template {
     let mut template = Template {
         html: String::new(),
         dynamic_slots: Vec::new(),
     };
     
+    // TODO: Use options for quote omission, tag minimization, etc.
     build_element_html(element, &mut template.html, &mut template.dynamic_slots, &mut Vec::new());
     template
 }
