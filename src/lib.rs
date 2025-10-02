@@ -5,6 +5,7 @@
 //! This plugin transforms JSX into efficient DOM operations for fine-grained reactive libraries like Solid.js.
 
 pub mod codegen;
+pub mod html_subset_parser;
 mod options;
 pub mod optimizer;
 pub mod template;
