@@ -202,9 +202,12 @@ fn build_child_html(
             if text_value.trim().is_empty() {
                 return;
             }
-            // Trim and escape special characters for template strings
+            // Trim and escape for template literals
+            // Only escape opening braces to match babel plugin behavior
             let trimmed = text_value.trim();
-            let escaped = trimmed.replace('{', "\\{").replace('}', "\\}");
+            let escaped = trimmed
+                .replace('\\', "\\\\")
+                .replace('{', "\\{");
             html.push_str(&escaped);
         }
         JSXChild::Element(elem) => {
@@ -215,13 +218,20 @@ fn build_child_html(
             match &container.expression {
                 JSXExpression::StringLiteral(string_lit) => {
                     // Static string - include in template with escaping
-                    let escaped = string_lit.value.as_str().replace('{', "\\{").replace('}', "\\}");
+                    // Only escape opening braces to match babel plugin behavior
+                    let escaped = string_lit.value.as_str()
+                        .replace('\\', "\\\\")
+                        .replace('{', "\\{");
                     html.push_str(&escaped);
                     return;
                 }
                 JSXExpression::NumericLiteral(num_lit) => {
                     // Static number - include in template
                     html.push_str(&num_lit.value.to_string());
+                    return;
+                }
+                JSXExpression::EmptyExpression(_) => {
+                    // Empty expression (comment) - skip it
                     return;
                 }
                 _ => {}

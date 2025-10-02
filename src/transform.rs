@@ -120,21 +120,282 @@ impl<'a> DomExpressions<'a> {
     /// Create an IIFE that clones template and applies dynamic bindings
     fn create_template_iife(
         &mut self,
-        _jsx_elem: &JSXElement<'a>,
-        _template: &Template,
-        _template_var: &str,
+        jsx_elem: &JSXElement<'a>,
+        template: &Template,
+        template_var: &str,
     ) -> Box<'a, CallExpression<'a>> {
-        // For now, just return a simple template call
-        // TODO: Implement full IIFE generation with dynamic bindings
-        // This requires generating:
-        // - Arrow function expression
-        // - Variable declarations for element references
-        // - Calls to runtime functions (spread, effect, classList, etc.)
-        // - Return statement
+        use oxc_ast::ast::*;
         
-        // Temporary: just create a simple call
-        let template_var_str = self.allocator.alloc_str(_template_var);
-        self.create_template_call(template_var_str)
+        // Generate IIFE: (() => { ... })()
+        // 1. Create statements for the function body
+        let mut body_stmts = OxcVec::new_in(self.allocator);
+        
+        // 2. Create template cloning statement and element references
+        // var _el$ = _tmpl$(), _el$2 = _el$.firstChild, ...
+        let (root_var, elem_decls) = self.create_element_declarations(template, template_var);
+        body_stmts.push(elem_decls);
+        
+        // 3. Create runtime calls for dynamic content
+        let runtime_stmts = self.create_runtime_calls(jsx_elem, template, &root_var);
+        body_stmts.extend(runtime_stmts);
+        
+        // 4. Create return statement
+        let return_stmt = self.create_return_statement(&root_var);
+        body_stmts.push(return_stmt);
+        
+        // Create function body
+        let func_body = FunctionBody {
+            span: SPAN,
+            directives: OxcVec::new_in(self.allocator),
+            statements: body_stmts,
+        };
+        
+        // Create arrow function
+        let arrow_fn = ArrowFunctionExpression {
+            span: SPAN,
+            expression: false,
+            r#async: false,
+            params: Box::new_in(
+                FormalParameters {
+                    span: SPAN,
+                    kind: FormalParameterKind::ArrowFormalParameters,
+                    items: OxcVec::new_in(self.allocator),
+                    rest: None,
+                },
+                self.allocator,
+            ),
+            body: Box::new_in(func_body, self.allocator),
+            type_parameters: None,
+            return_type: None,
+            scope_id: None.into(),
+            pure: false,
+            pife: false,
+        };
+        
+        // Create call expression: (() => { ... })()
+        let call_expr = CallExpression {
+            span: SPAN,
+            callee: Expression::ArrowFunctionExpression(
+                Box::new_in(arrow_fn, self.allocator)
+            ),
+            arguments: OxcVec::new_in(self.allocator),
+            optional: false,
+            type_arguments: None,
+            pure: false,
+        };
+        
+        Box::new_in(call_expr, self.allocator)
+    }
+
+    /// Create element reference declarations
+    /// Returns (root_var_name, statement)
+    fn create_element_declarations(
+        &mut self,
+        template: &Template,
+        template_var: &str,
+    ) -> (String, Statement<'a>) {
+        use oxc_ast::ast::*;
+        
+        // Generate unique variable names
+        let root_var = self.generate_element_var();
+        
+        // Create declarators
+        let mut declarators = OxcVec::new_in(self.allocator);
+        
+        // First declarator: var _el$ = _tmpl$()
+        let root_id = BindingPattern {
+            kind: BindingPatternKind::BindingIdentifier(
+                Box::new_in(
+                    BindingIdentifier {
+                        span: SPAN,
+                        name: Atom::from(self.allocator.alloc_str(&root_var)),
+                        symbol_id: None.into(),
+                    },
+                    self.allocator,
+                )
+            ),
+            type_annotation: None,
+            optional: false,
+        };
+        
+        // Create call to template function
+        let template_call = self.create_template_call(self.allocator.alloc_str(template_var));
+        
+        declarators.push(VariableDeclarator {
+            span: SPAN,
+            kind: VariableDeclarationKind::Var,
+            id: root_id,
+            init: Some(Expression::CallExpression(template_call)),
+            definite: false,
+        });
+        
+        // Generate element references for each dynamic slot
+        // Track which paths we've already created references for
+        let mut created_refs = std::collections::HashSet::new();
+        
+        for slot in &template.dynamic_slots {
+            if !slot.path.is_empty() && !created_refs.contains(&slot.path) {
+                created_refs.insert(slot.path.clone());
+                
+                let elem_var = self.generate_element_var();
+                let elem_id = BindingPattern {
+                    kind: BindingPatternKind::BindingIdentifier(
+                        Box::new_in(
+                            BindingIdentifier {
+                                span: SPAN,
+                                name: Atom::from(self.allocator.alloc_str(&elem_var)),
+                                symbol_id: None.into(),
+                            },
+                            self.allocator,
+                        )
+                    ),
+                    type_annotation: None,
+                    optional: false,
+                };
+                
+                // Build path expression: _el$.firstChild.nextSibling...
+                let mut expr = Expression::Identifier(
+                    Box::new_in(
+                        IdentifierReference {
+                            span: SPAN,
+                            name: Atom::from(self.allocator.alloc_str(&root_var)),
+                            reference_id: None.into(),
+                        },
+                        self.allocator,
+                    )
+                );
+                
+                for segment in &slot.path {
+                    expr = Expression::StaticMemberExpression(
+                        Box::new_in(
+                            StaticMemberExpression {
+                                span: SPAN,
+                                object: expr,
+                                property: IdentifierName {
+                                    span: SPAN,
+                                    name: Atom::from(self.allocator.alloc_str(segment)),
+                                },
+                                optional: false,
+                            },
+                            self.allocator,
+                        )
+                    );
+                }
+                
+                declarators.push(VariableDeclarator {
+                    span: SPAN,
+                    kind: VariableDeclarationKind::Var,
+                    id: elem_id,
+                    init: Some(expr),
+                    definite: false,
+                });
+            }
+        }
+        
+        let var_decl = VariableDeclaration {
+            span: SPAN,
+            kind: VariableDeclarationKind::Var,
+            declarations: declarators,
+            declare: false,
+        };
+        
+        (root_var, Statement::VariableDeclaration(Box::new_in(var_decl, self.allocator)))
+    }
+    
+    /// Generate unique element variable name
+    fn generate_element_var(&mut self) -> String {
+        self.element_counter += 1;
+        if self.element_counter == 1 {
+            "_el$".to_string()
+        } else {
+            format!("_el${}", self.element_counter)
+        }
+    }
+    
+    /// Create runtime calls for dynamic content
+    fn create_runtime_calls(
+        &mut self,
+        jsx_elem: &JSXElement<'a>,
+        template: &Template,
+        root_var: &str,
+    ) -> OxcVec<'a, Statement<'a>> {
+        let stmts = OxcVec::new_in(self.allocator);
+        
+        // Store effect_wrapper to avoid borrow issues
+        let effect_wrapper = self.options.effect_wrapper.clone();
+        let delegate_events = self.options.delegate_events;
+        
+        // For each dynamic slot, generate the appropriate runtime call
+        for slot in &template.dynamic_slots {
+            match &slot.slot_type {
+                SlotType::TextContent => {
+                    // Generate insert call
+                    self.add_import("insert");
+                    // TODO: Generate actual insert call with expression
+                },
+                SlotType::Attribute(_attr_name) => {
+                    // Generate setAttribute/effect call
+                    self.add_import("setAttribute");
+                    self.add_import(&effect_wrapper);
+                    // TODO: Generate actual attribute setting code
+                },
+                SlotType::EventHandler(event_name) => {
+                    if delegate_events && should_delegate_event(event_name) {
+                        self.add_delegated_event(event_name);
+                    }
+                    // TODO: Generate event handler binding
+                },
+                SlotType::Ref => {
+                    self.add_import("use");
+                    // TODO: Generate ref binding
+                },
+                SlotType::ClassList => {
+                    self.add_import("classList");
+                    // TODO: Generate classList binding
+                },
+                SlotType::StyleObject => {
+                    self.add_import("style");
+                    // TODO: Generate style binding
+                },
+                SlotType::OnEvent(_) | SlotType::OnCaptureEvent(_) => {
+                    self.add_import("addEventListener");
+                    // TODO: Generate addEventListener call
+                },
+            }
+        }
+        
+        // For now, return empty statements
+        // The full implementation would need to extract expressions from JSX
+        // and generate the appropriate calls
+        let _ = (jsx_elem, root_var); // Silence unused warnings
+        
+        stmts
+    }
+    
+    /// Create return statement
+    fn create_return_statement(&self, root_var: &str) -> Statement<'a> {
+        use oxc_ast::ast::*;
+        
+        let return_expr = Expression::Identifier(
+            Box::new_in(
+                IdentifierReference {
+                    span: SPAN,
+                    name: Atom::from(self.allocator.alloc_str(root_var)),
+                    reference_id: None.into(),
+                },
+                self.allocator,
+            )
+        );
+        
+        Statement::ReturnStatement(
+            Box::new_in(
+                ReturnStatement {
+                    span: SPAN,
+                    argument: Some(return_expr),
+                },
+                self.allocator,
+            )
+        )
     }
 
     /// Create import statement for runtime functions
