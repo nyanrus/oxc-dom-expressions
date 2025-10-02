@@ -311,25 +311,17 @@ fn serialize_node(node: &HtmlNode, options: &DomExpressionsOptions, on_last_path
             // Children and closing tag
             if !is_void {
                 // Determine if we should render children
-                // Stop rendering children if we're on the last path and:
-                // - Have mixed content (both text and element children), OR  
-                // - The last element child itself has ELEMENT children (not just text)
+                // The last-path optimization: we continue rendering down the last-child path
+                // BUT we stop if we encounter mixed content (text + elements at same level)
                 
                 let has_element_children = children.iter().any(|c| matches!(c, HtmlNode::Element { .. }));
                 let has_text_children = children.iter().any(|c| matches!(c, HtmlNode::Text(_)));
                 
-                // Check if last element child has ELEMENT children (not just text)
-                let last_elem_has_elem_children = children.iter()
-                    .filter(|c| matches!(c, HtmlNode::Element { .. }))
-                    .last()
-                    .and_then(|c| if let HtmlNode::Element { children: ch, .. } = c { 
-                        Some(ch.iter().any(|gc| matches!(gc, HtmlNode::Element { .. })))
-                    } else { None })
-                    .unwrap_or(false);
-                
-                // Stop if on last path and (mixed content OR last element has element children)
-                let should_stop_here = on_last_path && has_element_children && 
-                    (has_text_children || last_elem_has_elem_children);
+                // Stop rendering children only if:
+                // 1. We're on the last path, AND
+                // 2. We have both text and element children (mixed content)
+                // This handles the noscript case where it has "No JS!!" text + style element
+                let should_stop_here = on_last_path && has_element_children && has_text_children;
                 
                 if !should_stop_here {
                     // Serialize children
@@ -512,18 +504,23 @@ mod tests {
         let html = r#"<div><noscript>No JS!!<style>div</style></noscript></div>"#;
         let nodes = parse_html(html);
         
-        eprintln!("Noscript structure: {:#?}", nodes);
-        
         if let HtmlNode::Element { children, .. } = &nodes[0] {
             if let HtmlNode::Element { tag, children: noscript_children, .. } = &children[0] {
                 assert_eq!(tag, "noscript");
-                eprintln!("Noscript has {} children", noscript_children.len());
-                for (i, child) in noscript_children.iter().enumerate() {
-                    match child {
-                        HtmlNode::Text(t) => eprintln!("  Child {}: Text('{}')", i, t),
-                        HtmlNode::Element { tag, .. } => eprintln!("  Child {}: Element({})", i, tag),
-                    }
-                }
+                assert_eq!(noscript_children.len(), 2);
             }
         }
+    }
+
+    #[test]
+    fn test_minimalize_noscript_mixed_content() {
+        // noscript with mixed content (text + element) should stop at noscript when on last path
+        let html = r#"<div><noscript>No JS!!<style>div</style></noscript></div>"#;
+        let mut options = DomExpressionsOptions::default();
+        options.omit_quotes = false;
+        options.omit_last_closing_tag = true;
+        
+        let result = minimalize_template(html, &options);
+        // Should stop at noscript because it has mixed content (text + element)
+        assert_eq!(result, r#"<div><noscript>"#);
     }
