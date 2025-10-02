@@ -8,6 +8,7 @@ pub mod codegen;
 mod options;
 pub mod optimizer;
 pub mod template;
+pub mod template_minimalizer;
 mod transform;
 pub mod utils;
 
