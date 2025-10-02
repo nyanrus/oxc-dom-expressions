@@ -1,8 +1,10 @@
 //! Main transformer for DOM expressions
 
-use oxc_allocator::Allocator;
+use oxc_allocator::{Allocator, Box};
+use oxc_allocator::Vec as OxcVec;
 use oxc_ast::ast::*;
 use oxc_traverse::{Traverse, TraverseCtx};
+use oxc_span::{SPAN, Atom};
 use std::collections::{HashMap, HashSet};
 
 use crate::optimizer::{TemplateOptimizer, TemplateStats};
@@ -92,6 +94,49 @@ impl<'a> DomExpressions<'a> {
     fn add_delegated_event(&mut self, event: &str) {
         self.delegated_events.insert(event.to_lowercase());
     }
+
+    /// Create a call expression for cloning a template
+    fn create_template_call(&self, template_var: &'a str) -> Box<'a, CallExpression<'a>> {
+        // Create identifier for the template variable (e.g., "_tmpl$")
+        let callee_ident = IdentifierReference {
+            span: SPAN,
+            name: Atom::from(template_var),
+            reference_id: None.into(),
+        };
+        let callee = Expression::Identifier(Box::new_in(callee_ident, self.allocator));
+        
+        let call_expr = CallExpression {
+            span: SPAN,
+            arguments: OxcVec::new_in(self.allocator),
+            callee,
+            optional: false,
+            type_arguments: None,
+            pure: false,
+        };
+        
+        Box::new_in(call_expr, self.allocator)
+    }
+
+    /// Create import statement for runtime functions
+    fn create_import_statement(&self) -> Option<Statement<'a>> {
+        // For now, return None - implementing full AST for import is complex
+        // This would create: import { template as _$template, ... } from "module_name";
+        None
+    }
+
+    /// Create template variable declarations
+    fn create_template_declarations(&self) -> Option<Statement<'a>> {
+        // For now, return None - implementing full AST for var declarations is complex
+        // This would create: var _tmpl$ = _$template(`<html>`), ...
+        None
+    }
+
+    /// Create delegateEvents call
+    fn create_delegate_events_call(&self) -> Option<Statement<'a>> {
+        // For now, return None - implementing full AST for function call is complex
+        // This would create: _$delegateEvents(["click", "input"]);
+        None
+    }
 }
 
 impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
@@ -109,16 +154,48 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
         self.add_import("template");
     }
 
-    fn exit_program(&mut self, _program: &mut Program<'a>, _ctx: &mut TraverseCtx<'a, ()>) {
+    fn exit_program(&mut self, program: &mut Program<'a>, _ctx: &mut TraverseCtx<'a, ()>) {
         // Exit point for the transformation
-        // In a full implementation, we would:
-        // 1. Add all collected imports to the program
-        // 2. Add template variable declarations at the top level
-        // 3. Add delegateEvents call if needed
-        
-        // For now, we just track what would be added
+        // Add delegate events import if needed
         if self.options.delegate_events && !self.delegated_events.is_empty() {
             self.add_import("delegateEvents");
+        }
+
+        // Build the list of statements to inject at the beginning
+        let mut new_stmts = Vec::new();
+        
+        // 1. Add import statement
+        if !self.required_imports.is_empty() {
+            if let Some(import_stmt) = self.create_import_statement() {
+                new_stmts.push(import_stmt);
+            }
+        }
+        
+        // 2. Add template declarations
+        if !self.template_map.is_empty() {
+            if let Some(template_decl) = self.create_template_declarations() {
+                new_stmts.push(template_decl);
+            }
+        }
+        
+        // 3. Prepend new statements to the program
+        if !new_stmts.is_empty() {
+            // Get existing statements
+            let existing_stmts = std::mem::replace(&mut program.body, OxcVec::new_in(self.allocator));
+            
+            // Create new statement list with injected statements first
+            let mut all_stmts = new_stmts;
+            all_stmts.extend(existing_stmts);
+            
+            // Replace program body
+            program.body = OxcVec::from_iter_in(all_stmts.into_iter(), self.allocator);
+        }
+        
+        // 4. Add delegateEvents call if needed
+        if self.options.delegate_events && !self.delegated_events.is_empty() {
+            if let Some(delegate_call) = self.create_delegate_events_call() {
+                program.body.push(delegate_call);
+            }
         }
     }
 
@@ -143,9 +220,6 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
         
         // Record template for optimization analysis
         self.optimizer.record_template(template.clone());
-        
-        // Get or create template variable
-        let _template_var = self.get_template_var(&template.html);
         
         // Get effect wrapper name before borrowing self mutably
         let effect_wrapper = self.options.effect_wrapper.clone();
@@ -236,5 +310,43 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
     ) {
         // Handle JSX expression containers
         // Wrap dynamic expressions with effect() or insert() as appropriate
+    }
+
+    fn exit_expression(&mut self, expr: &mut Expression<'a>, _ctx: &mut TraverseCtx<'a, ()>) {
+        // Replace JSX elements with template calls
+        match expr {
+            Expression::JSXElement(jsx_elem) => {
+                // Check if this is a component
+                let tag_name = match &jsx_elem.opening_element.name {
+                    JSXElementName::Identifier(ident) => ident.name.as_str(),
+                    JSXElementName::IdentifierReference(ident) => ident.name.as_str(),
+                    _ => return, // Skip complex element names
+                };
+
+                if is_component(tag_name) {
+                    // Don't transform components
+                    return;
+                }
+
+                // Build template and get the template variable
+                let template = build_template(jsx_elem.as_ref());
+                let template_var = self.get_template_var(&template.html);
+                
+                // Allocate the template variable string so it lives for 'a
+                let template_var_str = self.allocator.alloc_str(&template_var);
+                
+                // Create a call expression to clone the template
+                let call_expr = self.create_template_call(template_var_str);
+                
+                // Replace the JSX element with the call expression
+                *expr = Expression::CallExpression(call_expr);
+            }
+            Expression::JSXFragment(_) => {
+                // Handle fragments
+                // For now, just leave them as-is
+                // In a full implementation, fragments would be converted to arrays
+            }
+            _ => {}
+        }
     }
 }
