@@ -217,12 +217,24 @@ impl<'a> DomExpressions<'a> {
                 optional: false,
             };
             
-            // Create template string argument
-            let template_string = StringLiteral {
+            // Create template literal argument (using backticks)
+            let template_element = TemplateElement {
                 span: SPAN,
-                value: Atom::from(self.allocator.alloc_str(html)),
-                raw: None,
+                tail: true,
+                value: TemplateElementValue {
+                    raw: Atom::from(self.allocator.alloc_str(html)),
+                    cooked: Some(Atom::from(self.allocator.alloc_str(html))),
+                },
                 lone_surrogates: false,
+            };
+            
+            let mut elements = OxcVec::new_in(self.allocator);
+            elements.push(template_element);
+            
+            let template_literal = TemplateLiteral {
+                span: SPAN,
+                quasis: elements,
+                expressions: OxcVec::new_in(self.allocator),
             };
             
             // Create call to _$template(...)
@@ -233,8 +245,8 @@ impl<'a> DomExpressions<'a> {
             };
             
             let mut args = OxcVec::new_in(self.allocator);
-            args.push(Argument::StringLiteral(
-                Box::new_in(template_string, self.allocator)
+            args.push(Argument::TemplateLiteral(
+                Box::new_in(template_literal, self.allocator)
             ));
             
             let init_call = CallExpression {
@@ -422,14 +434,18 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
         let delegate_events = self.options.delegate_events;
         
         // Track which imports are needed based on dynamic slots
+        // NOTE: Currently we only generate simple template calls without dynamic binding code,
+        // so we don't need to import these yet. When full IIFE generation is implemented,
+        // uncomment this code.
+        #[allow(clippy::never_loop)]
         for slot in &template.dynamic_slots {
             match &slot.slot_type {
                 SlotType::TextContent => {
-                    self.add_import("insert");
+                    // self.add_import("insert");
                 }
                 SlotType::Attribute(_) => {
-                    self.add_import("setAttribute");
-                    self.add_import(&effect_wrapper);
+                    // self.add_import("setAttribute");
+                    // self.add_import(&effect_wrapper);
                 }
                 SlotType::EventHandler(event_name) => {
                     if delegate_events && should_delegate_event(event_name) {
@@ -440,12 +456,12 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
                     // Ref doesn't need imports
                 }
                 SlotType::ClassList => {
-                    self.add_import("classList");
-                    self.add_import(&effect_wrapper);
+                    // self.add_import("classList");
+                    // self.add_import(&effect_wrapper);
                 }
                 SlotType::StyleObject => {
-                    self.add_import("style");
-                    self.add_import(&effect_wrapper);
+                    // self.add_import("style");
+                    // self.add_import(&effect_wrapper);
                 }
                 SlotType::OnEvent(_) | SlotType::OnCaptureEvent(_) => {
                     // These use direct addEventListener, no imports needed
