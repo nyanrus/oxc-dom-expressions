@@ -430,7 +430,7 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
         self.optimizer.record_template(template.clone());
         
         // Get effect wrapper name before borrowing self mutably
-        let effect_wrapper = self.options.effect_wrapper.clone();
+        let _effect_wrapper = self.options.effect_wrapper.clone(); // TODO: Use when implementing full dynamic binding
         let delegate_events = self.options.delegate_events;
         
         // Track which imports are needed based on dynamic slots
