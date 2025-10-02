@@ -1,8 +1,10 @@
 //! Main transformer for DOM expressions
 
-use oxc_allocator::Allocator;
+use oxc_allocator::{Allocator, CloneIn};
 use oxc_ast::ast::*;
+use oxc_span::{Atom, SPAN};
 use oxc_traverse::{Traverse, TraverseCtx};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use crate::optimizer::{TemplateOptimizer, TemplateStats};
@@ -12,7 +14,6 @@ use crate::utils::{is_component, should_delegate_event};
 
 /// The main DOM expressions transformer
 pub struct DomExpressions<'a> {
-    #[allow(dead_code)]
     allocator: &'a Allocator,
     options: DomExpressionsOptions,
     /// Collection of templates generated during transformation
@@ -29,6 +30,10 @@ pub struct DomExpressions<'a> {
     delegated_events: HashSet<String>,
     /// Optimizer for template analysis
     optimizer: TemplateOptimizer,
+    /// Stores JSX elements to replace with their generated code (span -> expression)
+    replacements: RefCell<HashMap<u32, Expression<'a>>>,
+    /// Template declarations to add to the program
+    template_declarations: RefCell<Vec<(String, String)>>,
 }
 
 impl<'a> DomExpressions<'a> {
@@ -44,6 +49,8 @@ impl<'a> DomExpressions<'a> {
             required_imports: HashSet::new(),
             delegated_events: HashSet::new(),
             optimizer: TemplateOptimizer::new(),
+            replacements: RefCell::new(HashMap::new()),
+            template_declarations: RefCell::new(Vec::new()),
         }
     }
 
@@ -92,6 +99,149 @@ impl<'a> DomExpressions<'a> {
     fn add_delegated_event(&mut self, event: &str) {
         self.delegated_events.insert(event.to_lowercase());
     }
+    
+    /// Generate a template call expression (e.g., _tmpl$())
+    fn generate_template_call(&self, template_var: &str, _template: &Template, ctx: &mut TraverseCtx<'a>) -> Expression<'a> {
+        // Create a call expression to the template function
+        // e.g., _tmpl$()
+        
+        // Allocate the template var name in the arena
+        let name_atom = Atom::from(template_var);
+        
+        // Create the callee (the template variable reference)
+        let callee = ctx.ast.expression_identifier_reference(SPAN, name_atom);
+        
+        // Create an empty arguments list
+        let arguments = ctx.ast.vec();
+        
+        // Create the call expression (None for type_parameters)
+        ctx.ast.expression_call(SPAN, callee, None::<TSTypeParameterInstantiation>, arguments, false)
+    }
+    
+    /// Create an import statement for the runtime functions
+    fn create_import_statement(&'a self, ctx: &mut TraverseCtx<'a>) -> Statement<'a> {
+        // Create: import { template as _$template, ... } from "r-dom";
+        
+        let mut specifiers = ctx.ast.vec();
+        
+        // Sort imports for consistent output
+        let mut imports: Vec<_> = self.required_imports.iter().collect();
+        imports.sort();
+        
+        for import_name in imports {
+            // Create the imported binding (e.g., "template")
+            let imported = ctx.ast.module_export_name_identifier_name(SPAN, Atom::from(import_name.as_str()));
+            
+            // Create the local binding (e.g., "_$template")
+            let local_name = format!("_${}", import_name);
+            let local = ctx.ast.binding_identifier(SPAN, Atom::from(local_name.as_str()));
+            
+            // Create the import specifier
+            let specifier = ctx.ast.import_declaration_specifier_import_specifier(
+                SPAN,
+                imported,
+                local,
+                ImportOrExportKind::Value,
+            );
+            
+            specifiers.push(specifier);
+        }
+        
+        // Create the source (e.g., "r-dom")
+        let source = ctx.ast.string_literal(SPAN, Atom::from(self.options.module_name.as_str()), None);
+        
+        // Create the import declaration
+        let import_decl = ctx.ast.alloc_import_declaration(
+            SPAN,
+            Some(specifiers),
+            source,
+            None,  // phase
+            None::<WithClause>,  // with_clause
+            ImportOrExportKind::Value,
+        );
+        
+        Statement::ImportDeclaration(import_decl)
+    }
+    
+    /// Create template variable declarations
+    fn create_template_declarations(&'a self, template_decls: &[(String, String)], ctx: &mut TraverseCtx<'a>) -> Statement<'a> {
+        // Create: var _tmpl$ = /*#__PURE__*/ _$template(`<div>`), _tmpl$2 = ...;
+        
+        let mut declarators = ctx.ast.vec();
+        
+        for (var_name, html) in template_decls {
+            // Create the template call: _$template(`<div>`)
+            let template_fn_expr = ctx.ast.expression_identifier_reference(SPAN, Atom::from("_$template"));
+            
+            // Create the template string argument
+            let template_str = ctx.ast.string_literal(SPAN, Atom::from(html.as_str()), None);
+            let template_str_expr = Expression::StringLiteral(ctx.ast.alloc(template_str));
+            
+            let mut args = ctx.ast.vec();
+            args.push(Argument::from(template_str_expr));
+            
+            // Create the call expression
+            let call_expr = ctx.ast.expression_call(SPAN, template_fn_expr, None::<TSTypeParameterInstantiation>, args, false);
+            
+            // Wrap with /*#__PURE__*/ comment (represented as the expression itself for now)
+            let init_expr = call_expr;
+            
+            // Create the declarator
+            let id_pattern = ctx.ast.binding_pattern_kind_binding_identifier(SPAN, Atom::from(var_name.as_str()));
+            let binding_pattern = ctx.ast.binding_pattern(id_pattern, None, false);
+            
+            let declarator = ctx.ast.variable_declarator(
+                SPAN,
+                VariableDeclarationKind::Var,
+                binding_pattern,
+                Some(init_expr),
+                false,
+            );
+            
+            declarators.push(declarator);
+        }
+        
+        // Create the variable declaration statement
+        let var_decl = ctx.ast.alloc_variable_declaration(
+            SPAN,
+            VariableDeclarationKind::Var,
+            declarators,
+            false,
+        );
+        
+        Statement::VariableDeclaration(var_decl)
+    }
+    
+    /// Create a delegateEvents call statement
+    fn create_delegate_events_call(&'a self, ctx: &mut TraverseCtx<'a>) -> Statement<'a> {
+        // Create: _$delegateEvents(["click", "input"]);
+        
+        let fn_expr = ctx.ast.expression_identifier_reference(SPAN, Atom::from("_$delegateEvents"));
+        
+        // Create the array of event names
+        let mut elements = ctx.ast.vec();
+        let mut events: Vec<_> = self.delegated_events.iter().collect();
+        events.sort();
+        
+        for event in events {
+            let event_str = ctx.ast.string_literal(SPAN, Atom::from(event.as_str()), None);
+            let event_expr = Expression::StringLiteral(ctx.ast.alloc(event_str));
+            let element = ArrayExpressionElement::from(event_expr);
+            elements.push(element);
+        }
+        
+        let array_expr = ctx.ast.expression_array(SPAN, elements, None);
+        
+        // Create the call
+        let mut args = ctx.ast.vec();
+        args.push(Argument::from(array_expr));
+        
+        let call_expr = ctx.ast.expression_call(SPAN, fn_expr, None::<TSTypeParameterInstantiation>, args, false);
+        
+        // Wrap in an expression statement
+        let expr_stmt = ctx.ast.alloc_expression_statement(SPAN, call_expr);
+        Statement::ExpressionStatement(expr_stmt)
+    }
 }
 
 impl<'a> Traverse<'a> for DomExpressions<'a> {
@@ -109,20 +259,46 @@ impl<'a> Traverse<'a> for DomExpressions<'a> {
         self.add_import("template");
     }
 
-    fn exit_program(&mut self, _program: &mut Program<'a>, _ctx: &mut TraverseCtx<'a>) {
+    fn exit_program(&mut self, program: &mut Program<'a>, ctx: &mut TraverseCtx<'a>) {
         // Exit point for the transformation
-        // In a full implementation, we would:
-        // 1. Add all collected imports to the program
-        // 2. Add template variable declarations at the top level
-        // 3. Add delegateEvents call if needed
+        // Add all collected imports and template declarations
         
-        // For now, we just track what would be added
         if self.options.delegate_events && !self.delegated_events.is_empty() {
             self.add_import("delegateEvents");
         }
+        
+        // Build the new statements to add
+        let mut new_statements = ctx.ast.vec();
+        
+        // 1. Add imports
+        if !self.required_imports.is_empty() {
+            let import_stmt = self.create_import_statement(ctx);
+            new_statements.push(import_stmt);
+        }
+        
+        // 2. Add template variable declarations
+        let template_decls = self.template_declarations.borrow();
+        if !template_decls.is_empty() {
+            let template_stmt = self.create_template_declarations(&template_decls, ctx);
+            new_statements.push(template_stmt);
+        }
+        
+        // 3. Append existing program statements
+        for stmt in program.body.iter() {
+            new_statements.push(stmt.clone_in(self.allocator));
+        }
+        
+        // 4. Add delegateEvents call if needed
+        if self.options.delegate_events && !self.delegated_events.is_empty() {
+            let delegate_stmt = self.create_delegate_events_call(ctx);
+            new_statements.push(delegate_stmt);
+        }
+        
+        // Replace program body
+        program.body = new_statements;
     }
 
-    fn enter_jsx_element(&mut self, elem: &mut JSXElement<'a>, _ctx: &mut TraverseCtx<'a>) {
+    fn exit_jsx_element(&mut self, elem: &mut JSXElement<'a>, ctx: &mut TraverseCtx<'a>) {
         // Check if this is a component or HTML element
         let tag_name = match &elem.opening_element.name {
             JSXElementName::Identifier(ident) => ident.name.as_str(),
@@ -130,10 +306,8 @@ impl<'a> Traverse<'a> for DomExpressions<'a> {
             _ => return, // Skip complex element names for now
         };
 
-        // Components are handled differently
+        // Components are handled differently - don't transform them
         if is_component(tag_name) {
-            // Component handling - track that we need component imports
-            // For now, just skip transformation
             return;
         }
 
@@ -145,7 +319,10 @@ impl<'a> Traverse<'a> for DomExpressions<'a> {
         self.optimizer.record_template(template.clone());
         
         // Get or create template variable
-        let _template_var = self.get_template_var(&template.html);
+        let template_var = self.get_template_var(&template.html);
+        
+        // Store template declaration
+        self.template_declarations.borrow_mut().push((template_var.clone(), template.html.clone()));
         
         // Get effect wrapper name before borrowing self mutably
         let effect_wrapper = self.options.effect_wrapper.clone();
@@ -184,13 +361,25 @@ impl<'a> Traverse<'a> for DomExpressions<'a> {
         }
         
         // Store the template for later code generation
-        self.templates.push(template);
+        self.templates.push(template.clone());
         
-        // Note: In a full implementation, we would:
-        // 1. Replace the JSX element with generated code
-        // 2. Create an IIFE that clones the template
-        // 3. Add code to set up dynamic bindings
-        // 4. Handle event handlers
+        // Generate the replacement expression - a call to the template function
+        // e.g., _tmpl$()
+        let replacement = self.generate_template_call(&template_var, &template, ctx);
+        
+        // Store the replacement to apply during exit_expression
+        let span_start = elem.span.start;
+        self.replacements.borrow_mut().insert(span_start, replacement);
+    }
+    
+    fn exit_expression(&mut self, expr: &mut Expression<'a>, _ctx: &mut TraverseCtx<'a>) {
+        // Check if this expression is a JSX element that needs to be replaced
+        if let Expression::JSXElement(jsx_elem) = expr {
+            let span_start = jsx_elem.span.start;
+            if let Some(replacement) = self.replacements.borrow_mut().remove(&span_start) {
+                *expr = replacement;
+            }
+        }
     }
 
     fn enter_jsx_fragment(&mut self, _frag: &mut JSXFragment<'a>, _ctx: &mut TraverseCtx<'a>) {
