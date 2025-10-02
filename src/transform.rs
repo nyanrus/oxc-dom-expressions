@@ -2,7 +2,7 @@
 
 use oxc_allocator::{Allocator, CloneIn};
 use oxc_ast::ast::*;
-use oxc_span::{Atom, SPAN};
+use oxc_span::SPAN;
 use oxc_traverse::{Traverse, TraverseCtx};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -101,15 +101,13 @@ impl<'a> DomExpressions<'a> {
     }
     
     /// Generate a template call expression (e.g., _tmpl$())
-    fn generate_template_call(&self, template_var: &str, _template: &Template, ctx: &mut TraverseCtx<'a>) -> Expression<'a> {
+    fn generate_template_call(&self, template_var: String, _template: &Template, ctx: &mut TraverseCtx<'a>) -> Expression<'a> {
         // Create a call expression to the template function
         // e.g., _tmpl$()
         
-        // Allocate the template var name in the arena
-        let name_atom = Atom::from(template_var);
-        
         // Create the callee (the template variable reference)
-        let callee = ctx.ast.expression_identifier_reference(SPAN, name_atom);
+        // Pass the String directly - it will be converted to Atom<'a> via IntoIn
+        let callee = ctx.ast.expression_identifier_reference(SPAN, template_var);
         
         // Create an empty arguments list
         let arguments = ctx.ast.vec();
@@ -118,23 +116,23 @@ impl<'a> DomExpressions<'a> {
         ctx.ast.expression_call(SPAN, callee, None::<TSTypeParameterInstantiation>, arguments, false)
     }
     
-    /// Create an import statement for the runtime functions
-    fn create_import_statement(&'a self, ctx: &mut TraverseCtx<'a>) -> Statement<'a> {
+    /// Create an import statement for the runtime functions (static version)
+    fn create_import_statement_static(required_imports: &HashSet<String>, module_name: String, ctx: &mut TraverseCtx<'a>) -> Statement<'a> {
         // Create: import { template as _$template, ... } from "r-dom";
         
         let mut specifiers = ctx.ast.vec();
         
         // Sort imports for consistent output
-        let mut imports: Vec<_> = self.required_imports.iter().collect();
+        let mut imports: Vec<_> = required_imports.iter().collect();
         imports.sort();
         
         for import_name in imports {
             // Create the imported binding (e.g., "template")
-            let imported = ctx.ast.module_export_name_identifier_name(SPAN, Atom::from(import_name.as_str()));
+            let imported = ctx.ast.module_export_name_identifier_name(SPAN, (*import_name).clone());
             
             // Create the local binding (e.g., "_$template")
             let local_name = format!("_${}", import_name);
-            let local = ctx.ast.binding_identifier(SPAN, Atom::from(local_name.as_str()));
+            let local = ctx.ast.binding_identifier(SPAN, local_name);
             
             // Create the import specifier
             let specifier = ctx.ast.import_declaration_specifier_import_specifier(
@@ -148,7 +146,7 @@ impl<'a> DomExpressions<'a> {
         }
         
         // Create the source (e.g., "r-dom")
-        let source = ctx.ast.string_literal(SPAN, Atom::from(self.options.module_name.as_str()), None);
+        let source = ctx.ast.string_literal(SPAN, module_name, None);
         
         // Create the import declaration
         let import_decl = ctx.ast.alloc_import_declaration(
@@ -163,18 +161,18 @@ impl<'a> DomExpressions<'a> {
         Statement::ImportDeclaration(import_decl)
     }
     
-    /// Create template variable declarations
-    fn create_template_declarations(&'a self, template_decls: &[(String, String)], ctx: &mut TraverseCtx<'a>) -> Statement<'a> {
+    /// Create template variable declarations (static version)
+    fn create_template_declarations_static(template_decls: Vec<(String, String)>, ctx: &mut TraverseCtx<'a>) -> Statement<'a> {
         // Create: var _tmpl$ = /*#__PURE__*/ _$template(`<div>`), _tmpl$2 = ...;
         
         let mut declarators = ctx.ast.vec();
         
         for (var_name, html) in template_decls {
             // Create the template call: _$template(`<div>`)
-            let template_fn_expr = ctx.ast.expression_identifier_reference(SPAN, Atom::from("_$template"));
+            let template_fn_expr = ctx.ast.expression_identifier_reference(SPAN, "_$template");
             
             // Create the template string argument
-            let template_str = ctx.ast.string_literal(SPAN, Atom::from(html.as_str()), None);
+            let template_str = ctx.ast.string_literal(SPAN, html, None);
             let template_str_expr = Expression::StringLiteral(ctx.ast.alloc(template_str));
             
             let mut args = ctx.ast.vec();
@@ -187,8 +185,8 @@ impl<'a> DomExpressions<'a> {
             let init_expr = call_expr;
             
             // Create the declarator
-            let id_pattern = ctx.ast.binding_pattern_kind_binding_identifier(SPAN, Atom::from(var_name.as_str()));
-            let binding_pattern = ctx.ast.binding_pattern(id_pattern, None, false);
+            let id_pattern = ctx.ast.binding_pattern_kind_binding_identifier(SPAN, var_name);
+            let binding_pattern = ctx.ast.binding_pattern(id_pattern, None::<TSTypeAnnotation>, false);
             
             let declarator = ctx.ast.variable_declarator(
                 SPAN,
@@ -212,19 +210,17 @@ impl<'a> DomExpressions<'a> {
         Statement::VariableDeclaration(var_decl)
     }
     
-    /// Create a delegateEvents call statement
-    fn create_delegate_events_call(&'a self, ctx: &mut TraverseCtx<'a>) -> Statement<'a> {
+    /// Create a delegateEvents call statement (static version)
+    fn create_delegate_events_call_static(delegated_events: Vec<String>, ctx: &mut TraverseCtx<'a>) -> Statement<'a> {
         // Create: _$delegateEvents(["click", "input"]);
         
-        let fn_expr = ctx.ast.expression_identifier_reference(SPAN, Atom::from("_$delegateEvents"));
+        let fn_expr = ctx.ast.expression_identifier_reference(SPAN, "_$delegateEvents");
         
         // Create the array of event names
         let mut elements = ctx.ast.vec();
-        let mut events: Vec<_> = self.delegated_events.iter().collect();
-        events.sort();
         
-        for event in events {
-            let event_str = ctx.ast.string_literal(SPAN, Atom::from(event.as_str()), None);
+        for event in delegated_events {
+            let event_str = ctx.ast.string_literal(SPAN, event, None);
             let event_expr = Expression::StringLiteral(ctx.ast.alloc(event_str));
             let element = ArrayExpressionElement::from(event_expr);
             elements.push(element);
@@ -272,15 +268,19 @@ impl<'a> Traverse<'a> for DomExpressions<'a> {
         
         // 1. Add imports
         if !self.required_imports.is_empty() {
-            let import_stmt = self.create_import_statement(ctx);
+            let import_stmt = Self::create_import_statement_static(&self.required_imports, self.options.module_name.clone(), ctx);
             new_statements.push(import_stmt);
         }
         
         // 2. Add template variable declarations
-        let template_decls = self.template_declarations.borrow();
-        if !template_decls.is_empty() {
-            let template_stmt = self.create_template_declarations(&template_decls, ctx);
-            new_statements.push(template_stmt);
+        {
+            let template_decls = self.template_declarations.borrow();
+            if !template_decls.is_empty() {
+                // Clone the data to pass ownership
+                let template_decls_owned: Vec<_> = template_decls.iter().cloned().collect();
+                let template_stmt = Self::create_template_declarations_static(template_decls_owned, ctx);
+                new_statements.push(template_stmt);
+            }
         }
         
         // 3. Append existing program statements
@@ -290,7 +290,9 @@ impl<'a> Traverse<'a> for DomExpressions<'a> {
         
         // 4. Add delegateEvents call if needed
         if self.options.delegate_events && !self.delegated_events.is_empty() {
-            let delegate_stmt = self.create_delegate_events_call(ctx);
+            let mut events: Vec<_> = self.delegated_events.iter().cloned().collect();
+            events.sort();
+            let delegate_stmt = Self::create_delegate_events_call_static(events, ctx);
             new_statements.push(delegate_stmt);
         }
         
@@ -365,7 +367,7 @@ impl<'a> Traverse<'a> for DomExpressions<'a> {
         
         // Generate the replacement expression - a call to the template function
         // e.g., _tmpl$()
-        let replacement = self.generate_template_call(&template_var, &template, ctx);
+        let replacement = self.generate_template_call(template_var, &template, ctx);
         
         // Store the replacement to apply during exit_expression
         let span_start = elem.span.start;
