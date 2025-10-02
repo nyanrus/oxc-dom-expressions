@@ -41,14 +41,14 @@ fn transform_jsx_hydratable(source: &str) -> Result<String, String> {
     let semantic = SemanticBuilder::new()
         .build(&program)
         .semantic;
-    let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+    let scoping = semantic.into_scoping();
     
     // Use hydratable mode options
     let options = DomExpressionsOptions::new("r-dom")
         .with_generate(GenerateMode::Dom);
     
     let mut transformer = DomExpressions::new(&allocator, options);
-    traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+    traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
     
     // Generate code from the transformed AST
     let generated = Codegen::new().build(&program).code;

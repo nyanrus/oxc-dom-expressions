@@ -210,7 +210,7 @@ fn get_element_name(opening: &JSXOpeningElement) -> String {
         JSXElementName::Identifier(ident) => ident.name.to_string(),
         JSXElementName::IdentifierReference(ident) => ident.name.to_string(),
         JSXElementName::NamespacedName(namespaced) => {
-            format!("{}:{}", namespaced.namespace.name, namespaced.property.name)
+            format!("{}:{}", namespaced.namespace.name, namespaced.name.name)
         }
         JSXElementName::MemberExpression(_) => {
             // Component member expression - not supported in templates
@@ -235,7 +235,7 @@ fn get_attribute_name(name: &JSXAttributeName) -> Option<String> {
             })
         }
         JSXAttributeName::NamespacedName(namespaced) => {
-            Some(format!("{}:{}", namespaced.namespace.name, namespaced.property.name))
+            Some(format!("{}:{}", namespaced.namespace.name, namespaced.name.name))
         }
     }
 }

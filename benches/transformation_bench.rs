@@ -2,7 +2,8 @@
 //!
 //! These benchmarks measure the performance of template transformation and optimization
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
+use std::hint::black_box;
 use oxc_allocator::Allocator;
 use oxc_dom_expressions::{DomExpressions, DomExpressionsOptions, GenerateMode};
 use oxc_parser::Parser;
@@ -18,10 +19,10 @@ fn transform_jsx(source: &str, options: DomExpressionsOptions) {
     let semantic = SemanticBuilder::new()
         .build(&program)
         .semantic;
-    let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+    let scoping = semantic.into_scoping();
     
     let mut transformer = DomExpressions::new(&allocator, options);
-    traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+    traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
 }
 
 fn bench_simple_element(c: &mut Criterion) {
@@ -202,10 +203,10 @@ fn bench_optimization_statistics(c: &mut Criterion) {
             let semantic = SemanticBuilder::new()
                 .build(&program)
                 .semantic;
-            let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+            let scoping = semantic.into_scoping();
             
             let mut transformer = DomExpressions::new(&allocator, DomExpressionsOptions::default());
-            traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+            traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
             
             // Get optimization statistics
             let _stats = transformer.get_template_stats();

@@ -94,8 +94,8 @@ impl<'a> DomExpressions<'a> {
     }
 }
 
-impl<'a> Traverse<'a> for DomExpressions<'a> {
-    fn enter_program(&mut self, _program: &mut Program<'a>, _ctx: &mut TraverseCtx<'a>) {
+impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
+    fn enter_program(&mut self, _program: &mut Program<'a>, _ctx: &mut TraverseCtx<'a, ()>) {
         // Entry point for the transformation
         // Initialize state for collecting templates and imports
         self.templates.clear();
@@ -109,7 +109,7 @@ impl<'a> Traverse<'a> for DomExpressions<'a> {
         self.add_import("template");
     }
 
-    fn exit_program(&mut self, _program: &mut Program<'a>, _ctx: &mut TraverseCtx<'a>) {
+    fn exit_program(&mut self, _program: &mut Program<'a>, _ctx: &mut TraverseCtx<'a, ()>) {
         // Exit point for the transformation
         // In a full implementation, we would:
         // 1. Add all collected imports to the program
@@ -122,7 +122,7 @@ impl<'a> Traverse<'a> for DomExpressions<'a> {
         }
     }
 
-    fn enter_jsx_element(&mut self, elem: &mut JSXElement<'a>, _ctx: &mut TraverseCtx<'a>) {
+    fn enter_jsx_element(&mut self, elem: &mut JSXElement<'a>, _ctx: &mut TraverseCtx<'a, ()>) {
         // Check if this is a component or HTML element
         let tag_name = match &elem.opening_element.name {
             JSXElementName::Identifier(ident) => ident.name.as_str(),
@@ -193,7 +193,7 @@ impl<'a> Traverse<'a> for DomExpressions<'a> {
         // 4. Handle event handlers
     }
 
-    fn enter_jsx_fragment(&mut self, _frag: &mut JSXFragment<'a>, _ctx: &mut TraverseCtx<'a>) {
+    fn enter_jsx_fragment(&mut self, _frag: &mut JSXFragment<'a>, _ctx: &mut TraverseCtx<'a, ()>) {
         // Handle JSX fragments
         // Fragments are converted to arrays in Solid
         // Track that we encountered one and may need special handling
@@ -209,13 +209,13 @@ impl<'a> Traverse<'a> for DomExpressions<'a> {
     fn enter_jsx_opening_element(
         &mut self,
         _elem: &mut JSXOpeningElement<'a>,
-        _ctx: &mut TraverseCtx<'a>,
+        _ctx: &mut TraverseCtx<'a, ()>,
     ) {
         // Handle JSX opening elements
         // This is where we would process attributes
     }
 
-    fn enter_jsx_attribute(&mut self, _attr: &mut JSXAttribute<'a>, _ctx: &mut TraverseCtx<'a>) {
+    fn enter_jsx_attribute(&mut self, _attr: &mut JSXAttribute<'a>, _ctx: &mut TraverseCtx<'a, ()>) {
         // Handle JSX attributes
         // Process special attributes and event handlers
     }
@@ -223,7 +223,7 @@ impl<'a> Traverse<'a> for DomExpressions<'a> {
     fn enter_jsx_spread_attribute(
         &mut self,
         _attr: &mut JSXSpreadAttribute<'a>,
-        _ctx: &mut TraverseCtx<'a>,
+        _ctx: &mut TraverseCtx<'a, ()>,
     ) {
         // Handle JSX spread attributes
         // In a full implementation, we would handle spread props
@@ -232,7 +232,7 @@ impl<'a> Traverse<'a> for DomExpressions<'a> {
     fn enter_jsx_expression_container(
         &mut self,
         _expr: &mut JSXExpressionContainer<'a>,
-        _ctx: &mut TraverseCtx<'a>,
+        _ctx: &mut TraverseCtx<'a, ()>,
     ) {
         // Handle JSX expression containers
         // Wrap dynamic expressions with effect() or insert() as appropriate
