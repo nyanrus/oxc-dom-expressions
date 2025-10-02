@@ -2,73 +2,358 @@
 //!
 //! This module handles the conversion of standard HTML/XML templates to
 //! dom-expressions minimalized format by:
+//! - Parsing well-formed HTML into an AST
 //! - Omitting quotes from attribute values when safe
 //! - Omitting closing tags for elements on the last-child path
-//! - Escaping special characters for template strings
+//! - Precisely handling the last-child path logic
 
 use crate::options::DomExpressionsOptions;
 
+/// HTML node types in our AST
+#[derive(Debug, Clone)]
+pub enum HtmlNode {
+    Element {
+        tag: String,
+        attributes: Vec<(String, String)>,
+        children: Vec<HtmlNode>,
+        is_void: bool,
+    },
+    Text(String),
+}
+
 /// Minimalize an HTML template string according to dom-expressions rules
 pub fn minimalize_template(html: &str, options: &DomExpressionsOptions) -> String {
-    let mut result = html.to_string();
+    // Parse HTML into AST
+    let nodes = parse_html(html);
     
-    if options.omit_quotes {
-        result = omit_attribute_quotes(&result);
+    // Serialize with minimization options
+    serialize_html(&nodes, options, true)
+}
+
+/// Parse HTML into an AST (public for testing)
+pub fn parse_html(html: &str) -> Vec<HtmlNode> {
+    let mut chars = html.chars().peekable();
+    let mut nodes = Vec::new();
+    
+    while chars.peek().is_some() {
+        if let Some(node) = parse_node(&mut chars) {
+            nodes.push(node);
+        }
     }
     
-    if options.omit_last_closing_tag {
-        result = omit_closing_tags(&result);
+    nodes
+}
+
+/// Parse a single HTML node
+fn parse_node(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<HtmlNode> {
+    // Skip whitespace between tags
+    while let Some(&ch) = chars.peek() {
+        if ch.is_whitespace() {
+            chars.next();
+        } else {
+            break;
+        }
+    }
+    
+    if chars.peek() == Some(&'<') {
+        chars.next(); // consume '<'
+        
+        // Check if it's a closing tag
+        if chars.peek() == Some(&'/') {
+            // This is a closing tag, return None to signal end of element
+            return None;
+        }
+        
+        // Parse tag name
+        let mut tag = String::new();
+        while let Some(&ch) = chars.peek() {
+            if ch.is_whitespace() || ch == '>' || ch == '/' {
+                break;
+            }
+            tag.push(ch);
+            chars.next();
+        }
+        
+        // Parse attributes
+        let mut attributes = Vec::new();
+        loop {
+            // Skip whitespace
+            while let Some(&ch) = chars.peek() {
+                if ch.is_whitespace() {
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
+            
+            // Check for end of tag
+            if chars.peek() == Some(&'>') || chars.peek() == Some(&'/') {
+                break;
+            }
+            
+            // Parse attribute name
+            let mut attr_name = String::new();
+            while let Some(&ch) = chars.peek() {
+                if ch == '=' || ch.is_whitespace() || ch == '>' {
+                    break;
+                }
+                attr_name.push(ch);
+                chars.next();
+            }
+            
+            if attr_name.is_empty() {
+                break;
+            }
+            
+            // Skip whitespace
+            while let Some(&ch) = chars.peek() {
+                if ch.is_whitespace() {
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
+            
+            // Check for '='
+            let mut attr_value = String::new();
+            if chars.peek() == Some(&'=') {
+                chars.next(); // consume '='
+                
+                // Skip whitespace
+                while let Some(&ch) = chars.peek() {
+                    if ch.is_whitespace() {
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                
+                // Parse attribute value
+                if let Some(&quote_ch) = chars.peek() {
+                    if quote_ch == '"' || quote_ch == '\'' {
+                        chars.next(); // consume quote
+                        while let Some(&ch) = chars.peek() {
+                            if ch == quote_ch {
+                                chars.next(); // consume closing quote
+                                break;
+                            }
+                            attr_value.push(ch);
+                            chars.next();
+                        }
+                    } else {
+                        // Unquoted attribute value
+                        while let Some(&ch) = chars.peek() {
+                            if ch.is_whitespace() || ch == '>' {
+                                break;
+                            }
+                            attr_value.push(ch);
+                            chars.next();
+                        }
+                    }
+                }
+            }
+            
+            attributes.push((attr_name, attr_value));
+        }
+        
+        // Check if self-closing or void element
+        let is_void = is_void_tag(&tag);
+        let mut self_closing = false;
+        
+        if chars.peek() == Some(&'/') {
+            chars.next(); // consume '/'
+            self_closing = true;
+        }
+        
+        if chars.peek() == Some(&'>') {
+            chars.next(); // consume '>'
+        }
+        
+        // Parse children for non-void elements
+        let mut children = Vec::new();
+        if !is_void && !self_closing {
+            loop {
+                // Skip whitespace  
+                while let Some(&ch) = chars.peek() {
+                    if ch.is_whitespace() {
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                
+                // Check for closing tag by looking ahead
+                if chars.peek() == Some(&'<') {
+                    let mut temp_chars = chars.clone();
+                    temp_chars.next(); // consume '<'
+                    
+                    if temp_chars.peek() == Some(&'/') {
+                        temp_chars.next(); // consume '/'
+                        
+                        // Check if this closing tag matches our opening tag
+                        let mut closing_tag_name = String::new();
+                        while let Some(&ch) = temp_chars.peek() {
+                            if ch == '>' || ch.is_whitespace() {
+                                break;
+                            }
+                            closing_tag_name.push(ch);
+                            temp_chars.next();
+                        }
+                        
+                        if closing_tag_name == tag {
+                            // This is our closing tag, consume it
+                            while let Some(&ch) = chars.peek() {
+                                chars.next();
+                                if ch == '>' {
+                                    break;
+                                }
+                            }
+                            break;
+                        }
+                        // Otherwise, it's a closing tag for a child element
+                        // Let the recursive call handle it
+                    }
+                    
+                    // Try to parse a child element
+                    if let Some(child) = parse_node(chars) {
+                        children.push(child);
+                    } else {
+                        // parse_node returned None, which means it hit a closing tag
+                        // This closing tag is for us, so break
+                        break;
+                    }
+                } else if chars.peek().is_some() {
+                    // Parse text content
+                    let mut text = String::new();
+                    while let Some(&ch) = chars.peek() {
+                        if ch == '<' {
+                            break;
+                        }
+                        text.push(ch);
+                        chars.next();
+                    }
+                    if !text.is_empty() {
+                        children.push(HtmlNode::Text(text));
+                    }
+                } else {
+                    // End of input
+                    break;
+                }
+            }
+        }
+        
+        Some(HtmlNode::Element {
+            tag,
+            attributes,
+            children,
+            is_void,
+        })
+    } else {
+        // Parse text content
+        let mut text = String::new();
+        while let Some(&ch) = chars.peek() {
+            if ch == '<' {
+                break;
+            }
+            text.push(ch);
+            chars.next();
+        }
+        if !text.is_empty() {
+            Some(HtmlNode::Text(text))
+        } else {
+            None
+        }
+    }
+}
+
+/// Serialize HTML nodes back to string with minimization
+fn serialize_html(nodes: &[HtmlNode], options: &DomExpressionsOptions, is_root: bool) -> String {
+    let mut result = String::new();
+    
+    for (index, node) in nodes.iter().enumerate() {
+        let is_last = index == nodes.len() - 1;
+        result.push_str(&serialize_node(node, options, is_root && is_last, is_last));
     }
     
     result
 }
 
-/// Omit quotes from HTML attribute values when they contain only safe characters
-/// Safe characters: alphanumeric, hyphen, underscore, period, colon
-fn omit_attribute_quotes(html: &str) -> String {
-    // This is a simplified implementation
-    // In a full implementation, we'd use proper HTML parsing
-    // For now, we use regex or simple string processing
-    
-    let mut result = String::new();
-    let mut chars = html.chars().peekable();
-    
-    while let Some(ch) = chars.next() {
-        if ch == '=' {
-            result.push(ch);
-            // Check if next char is a quote
-            if let Some(&next_ch) = chars.peek() {
-                if next_ch == '"' || next_ch == '\'' {
-                    let quote_char = next_ch;
-                    chars.next(); // consume quote
-                    
-                    // Collect attribute value
-                    let mut value = String::new();
-                    while let Some(&ch) = chars.peek() {
-                        if ch == quote_char {
-                            chars.next(); // consume closing quote
-                            break;
-                        }
-                        value.push(ch);
-                        chars.next();
-                    }
-                    
-                    // Check if we can omit quotes
-                    if can_omit_quotes(&value) {
-                        result.push_str(&value);
+/// Serialize a single node
+fn serialize_node(node: &HtmlNode, options: &DomExpressionsOptions, on_last_path: bool, _is_last_sibling: bool) -> String {
+    match node {
+        HtmlNode::Text(text) => text.clone(),
+        HtmlNode::Element { tag, attributes, children, is_void } => {
+            let mut result = String::new();
+            
+            // Opening tag
+            result.push('<');
+            result.push_str(tag);
+            
+            // Attributes
+            for (name, value) in attributes {
+                result.push(' ');
+                result.push_str(name);
+                if !value.is_empty() {
+                    result.push('=');
+                    // Check if we should omit quotes
+                    if options.omit_quotes && can_omit_quotes(value) {
+                        result.push_str(value);
                     } else {
-                        result.push(quote_char);
-                        result.push_str(&value);
-                        result.push(quote_char);
+                        result.push('"');
+                        result.push_str(value);
+                        result.push('"');
                     }
-                    continue;
                 }
             }
+            
+            result.push('>');
+            
+            // Children and closing tag
+            if !is_void {
+                // Determine if we should render children
+                // Stop rendering children if we're on the last path and:
+                // - Have mixed content (both text and element children), OR  
+                // - The last element child itself has ELEMENT children (not just text)
+                
+                let has_element_children = children.iter().any(|c| matches!(c, HtmlNode::Element { .. }));
+                let has_text_children = children.iter().any(|c| matches!(c, HtmlNode::Text(_)));
+                
+                // Check if last element child has ELEMENT children (not just text)
+                let last_elem_has_elem_children = children.iter()
+                    .filter(|c| matches!(c, HtmlNode::Element { .. }))
+                    .last()
+                    .and_then(|c| if let HtmlNode::Element { children: ch, .. } = c { 
+                        Some(ch.iter().any(|gc| matches!(gc, HtmlNode::Element { .. })))
+                    } else { None })
+                    .unwrap_or(false);
+                
+                // Stop if on last path and (mixed content OR last element has element children)
+                let should_stop_here = on_last_path && has_element_children && 
+                    (has_text_children || last_elem_has_elem_children);
+                
+                if !should_stop_here {
+                    // Serialize children
+                    for (idx, child) in children.iter().enumerate() {
+                        let child_is_last = idx == children.len() - 1;
+                        let child_is_element = matches!(child, HtmlNode::Element { .. });
+                        let child_on_last_path = on_last_path && child_is_last && child_is_element;
+                        result.push_str(&serialize_node(child, options, child_on_last_path, child_is_last));
+                    }
+                }
+                
+                // Closing tag - omit if on last path and option is set
+                let should_omit_closing = options.omit_last_closing_tag && on_last_path;
+                
+                if !should_omit_closing {
+                    result.push_str("</");
+                    result.push_str(tag);
+                    result.push('>');
+                }
+            }
+            
+            result
         }
-        result.push(ch);
     }
-    
-    result
 }
 
 /// Check if attribute value can be written without quotes
@@ -78,86 +363,16 @@ fn can_omit_quotes(value: &str) -> bool {
     })
 }
 
-/// Omit closing tags for elements on the last-child path
-/// 
-/// This follows the dom-expressions convention where:
-/// - The root element omits its closing tag
-/// - Elements on the "last child path" (following last children recursively) omit closing tags
-/// - This continues until hitting an element with multiple children or element children with content
-fn omit_closing_tags(html: &str) -> String {
-    // Simple approach: work backwards from the end
-    // Find closing tags that are at the end or followed only by other closing tags
-    // and remove them following the last-path rule
-    
-    let mut result = html.to_string();
-    
-    // Find the last closing tag and remove it (root element)
-    if let Some(pos) = result.rfind("</") {
-        if let Some(end_pos) = result[pos..].find('>') {
-            let closing_tag_end = pos + end_pos + 1;
-            // Check if this is truly at the end (may have whitespace)
-            if result[closing_tag_end..].trim().is_empty() {
-                result.truncate(pos);
-                result = result.trim_end().to_string();
-            }
-        }
-    }
-    
-    // Continue removing closing tags from the end following the last-child pattern
-    // This is a simplified heuristic - a full implementation would parse the HTML tree
-    loop {
-        let before = result.clone();
-        
-        // Try to find and remove the last closing tag if it's part of last-child path
-        if let Some(pos) = result.rfind("</") {
-            if let Some(end_pos) = result[pos..].find('>') {
-                let closing_tag_end = pos + end_pos + 1;
-                // Check if this closing tag is at the end
-                if result[closing_tag_end..].trim().is_empty() {
-                    // Extract tag name
-                    let tag_content = &result[pos+2..pos+end_pos];
-                    
-                    // Check if there's content before this closing tag that would suggest
-                    // this is the last child. This is heuristic-based.
-                    // Look for the opening tag
-                    let opening_search = format!("<{}", tag_content);
-                    if let Some(open_pos) = result[..pos].rfind(&opening_search) {
-                        // Check if there's another element after this one at the same level
-                        // by looking for another opening tag after our opening but before closing
-                        let between = &result[open_pos..pos];
-                        
-                        // Simple heuristic: if there's content between open and close,
-                        // and it contains nested elements (has '<' after our tag opens),
-                        // this might be on the last path
-                        let after_open = open_pos + opening_search.len();
-                        if let Some(first_gt) = result[after_open..].find('>') {
-                            let content_start = after_open + first_gt + 1;
-                            let has_nested = result[content_start..pos].contains('<');
-                            
-                            // If it has nested elements, it might be on last path
-                            // Remove the closing tag and continue
-                            if has_nested || result[content_start..pos].trim().is_empty() {
-                                result.truncate(pos);
-                                result = result.trim_end().to_string();
-                                continue;
-                            }
-                        }
-                    }
-                    
-                    // If we can't determine it's safe to remove, stop
-                    break;
-                }
-            }
-        }
-        
-        // If nothing changed, we're done
-        if result == before {
-            break;
-        }
-    }
-    
-    result
+/// Check if a tag is a void element (self-closing in HTML)
+fn is_void_tag(tag: &str) -> bool {
+    matches!(
+        tag.to_lowercase().as_str(),
+        "area" | "base" | "br" | "col" | "embed" | "hr" | "img" | "input" |
+        "link" | "meta" | "param" | "source" | "track" | "wbr"
+    )
 }
+
+
 
 #[cfg(test)]
 mod tests {
@@ -178,15 +393,137 @@ mod tests {
     }
 
     #[test]
-    fn test_omit_attribute_quotes_simple() {
-        assert_eq!(
-            omit_attribute_quotes(r#"<div id="main"></div>"#),
-            "<div id=main></div>"
-        );
+    fn test_parse_simple_element() {
+        let html = r#"<div id="main"></div>"#;
+        let nodes = parse_html(html);
+        assert_eq!(nodes.len(), 1);
         
-        assert_eq!(
-            omit_attribute_quotes(r#"<div id="has space"></div>"#),
-            r#"<div id="has space"></div>"#
-        );
+        if let HtmlNode::Element { tag, attributes, children, .. } = &nodes[0] {
+            assert_eq!(tag, "div");
+            assert_eq!(attributes.len(), 1);
+            assert_eq!(attributes[0].0, "id");
+            assert_eq!(attributes[0].1, "main");
+            assert_eq!(children.len(), 0);
+        } else {
+            panic!("Expected element node");
+        }
+    }
+
+    #[test]
+    fn test_minimalize_with_quote_omission() {
+        let html = r#"<div id="main"></div>"#;
+        let mut options = DomExpressionsOptions::default();
+        options.omit_quotes = true;
+        options.omit_last_closing_tag = false;
+        
+        let result = minimalize_template(html, &options);
+        assert_eq!(result, "<div id=main></div>");
+    }
+
+    #[test]
+    fn test_minimalize_with_closing_tag_omission() {
+        let html = r#"<div><span></span></div>"#;
+        let mut options = DomExpressionsOptions::default();
+        options.omit_quotes = false;
+        options.omit_last_closing_tag = true;
+        
+        let result = minimalize_template(html, &options);
+        // Root div should omit closing, last child span should omit closing
+        assert_eq!(result, r#"<div><span>"#);
+    }
+
+    #[test]
+    fn test_parse_nested_elements() {
+        let html = r#"<div><button><span>0</span></button></div>"#;
+        let nodes = parse_html(html);
+        
+        assert_eq!(nodes.len(), 1);
+        if let HtmlNode::Element { tag, children, .. } = &nodes[0] {
+            assert_eq!(tag, "div");
+            assert_eq!(children.len(), 1);
+            
+            if let HtmlNode::Element { tag: tag2, children: children2, .. } = &children[0] {
+                assert_eq!(tag2, "button");
+                assert_eq!(children2.len(), 1);
+                
+                if let HtmlNode::Element { tag: tag3, children: children3, .. } = &children2[0] {
+                    assert_eq!(tag3, "span");
+                    assert_eq!(children3.len(), 1);
+                    
+                    if let HtmlNode::Text(text) = &children3[0] {
+                        assert_eq!(text, "0");
+                    } else {
+                        panic!("Expected text node");
+                    }
+                } else {
+                    panic!("Expected span element");
+                }
+            } else {
+                panic!("Expected button element");
+            }
+        } else {
+            panic!("Expected div element");
+        }
+    }
+
+    #[test]
+    fn test_parse_nested_divs() {
+        let html = r#"<div><div><button></button></div></div>"#;
+        let nodes = parse_html(html);
+        
+        eprintln!("Parsed nodes for nested divs: {:#?}", nodes);
+        
+        assert_eq!(nodes.len(), 1);
+        if let HtmlNode::Element { tag, children, .. } = &nodes[0] {
+            assert_eq!(tag, "div");
+            assert_eq!(children.len(), 1, "Outer div should have 1 child");
+            
+            if let HtmlNode::Element { tag: tag2, children: children2, .. } = &children[0] {
+                assert_eq!(tag2, "div");
+                assert_eq!(children2.len(), 1, "Inner div should have 1 child (button)");
+            } else {
+                panic!("Expected inner div element");
+            }
+        } else {
+            panic!("Expected outer div element");
+        }
     }
 }
+
+    #[test]
+    fn test_minimalize_nested_with_text() {
+        let html = r#"<div><div><button><span>0</span></button></div></div>"#;
+        let mut options = DomExpressionsOptions::default();
+        options.omit_quotes = false;
+        options.omit_last_closing_tag = true;
+        
+        let result = minimalize_template(html, &options);
+        eprintln!("Input:  {}", html);
+        eprintln!("Output: {}", result);
+        // Should be: <div><div><button><span>0
+        // Root div, last div, last button, last span all omit closing tags
+        // But text "0" should still be there
+        assert!(result.contains("0"));
+        assert_eq!(result, r#"<div><div><button><span>0"#);
+    }
+
+    #[test]
+    fn test_parse_noscript() {
+        let html = r#"<div><noscript>No JS!!<style>div</style></noscript></div>"#;
+        let nodes = parse_html(html);
+        
+        eprintln!("Noscript structure: {:#?}", nodes);
+        
+        if let HtmlNode::Element { children, .. } = &nodes[0] {
+            if let HtmlNode::Element { tag, children: noscript_children, .. } = &children[0] {
+                assert_eq!(tag, "noscript");
+                eprintln!("Noscript has {} children", noscript_children.len());
+                for (i, child) in noscript_children.iter().enumerate() {
+                    match child {
+                        HtmlNode::Text(t) => eprintln!("  Child {}: Text('{}')", i, t),
+                        HtmlNode::Element { tag, .. } => eprintln!("  Child {}: Element({})", i, tag),
+                    }
+                }
+            }
+        }
+    }
