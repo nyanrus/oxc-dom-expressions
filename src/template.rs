@@ -53,18 +53,25 @@ pub fn build_template(element: &JSXElement) -> Template {
 }
 
 /// Build a template from a JSX element with options
-pub fn build_template_with_options(element: &JSXElement, _options: Option<&crate::options::DomExpressionsOptions>) -> Template {
+pub fn build_template_with_options(element: &JSXElement, options: Option<&crate::options::DomExpressionsOptions>) -> Template {
     let mut template = Template {
         html: String::new(),
         dynamic_slots: Vec::new(),
     };
     
-    // TODO: Use options for quote omission, tag minimization, etc.
+    // Build standard HTML from JSX
     build_element_html(element, &mut template.html, &mut template.dynamic_slots, &mut Vec::new());
+    
+    // Apply minimalization if options are provided
+    if let Some(opts) = options {
+        template.html = crate::template_minimalizer::minimalize_template(&template.html, opts);
+    }
+    
     template
 }
 
 /// Build HTML string from JSX element recursively
+/// This produces standard, well-formed HTML without minimalization
 fn build_element_html(
     element: &JSXElement,
     html: &mut String,
@@ -133,7 +140,7 @@ fn build_element_html(
                 } else if let Some(value) = &attr.value {
                     // Regular attribute
                     if let Some(static_value) = get_static_attribute_value(value) {
-                        // Static attribute - add to template
+                        // Static attribute - add to template with quotes
                         let _ = write!(html, " {}=\"{}\"", name, static_value);
                     } else {
                         // Dynamic attribute - track for later
@@ -157,13 +164,15 @@ fn build_element_html(
         let child_path_start = path.len();
         
         for (i, child) in element.children.iter().enumerate() {
-            // Update path for this child
-            if i == 0 {
-                path.push("firstChild".to_string());
-            } else {
-                // Replace last element with nextSibling
-                if let Some(last) = path.last_mut() {
-                    *last = "nextSibling".to_string();
+            // Update path for element children
+            if matches!(child, JSXChild::Element(_)) {
+                if i == 0 || !element.children[..i].iter().any(|c| matches!(c, JSXChild::Element(_))) {
+                    path.push("firstChild".to_string());
+                } else {
+                    // Replace last element with nextSibling
+                    if let Some(last) = path.last_mut() {
+                        *last = "nextSibling".to_string();
+                    }
                 }
             }
             
@@ -173,7 +182,7 @@ fn build_element_html(
         // Restore path
         path.truncate(child_path_start);
         
-        // Closing tag
+        // Always add closing tag for standard HTML
         let _ = write!(html, "</{}>", tag_name);
     }
 }
@@ -187,18 +196,37 @@ fn build_child_html(
 ) {
     match child {
         JSXChild::Text(text) => {
-            // Static text
+            // Static text - only include if non-whitespace
             let text_value = text.value.as_str();
-            if !text_value.trim().is_empty() {
-                html.push_str(text_value);
+            // Skip whitespace-only text nodes (common in formatted JSX)
+            if text_value.trim().is_empty() {
+                return;
             }
+            // Trim and escape special characters for template strings
+            let trimmed = text_value.trim();
+            let escaped = trimmed.replace('{', "\\{").replace('}', "\\}");
+            html.push_str(&escaped);
         }
         JSXChild::Element(elem) => {
             build_element_html(elem, html, slots, path);
         }
-        JSXChild::ExpressionContainer(_) => {
-            // Dynamic content - leave empty in template
-            // Record the slot for later
+        JSXChild::ExpressionContainer(container) => {
+            // Check if this is a static literal that can be inlined
+            match &container.expression {
+                JSXExpression::StringLiteral(string_lit) => {
+                    // Static string - include in template with escaping
+                    let escaped = string_lit.value.as_str().replace('{', "\\{").replace('}', "\\}");
+                    html.push_str(&escaped);
+                    return;
+                }
+                JSXExpression::NumericLiteral(num_lit) => {
+                    // Static number - include in template
+                    html.push_str(&num_lit.value.to_string());
+                    return;
+                }
+                _ => {}
+            }
+            // Dynamic content - leave empty in template and record the slot
             slots.push(DynamicSlot {
                 path: path.clone(),
                 slot_type: SlotType::TextContent,
@@ -250,7 +278,16 @@ fn get_attribute_name(name: &JSXAttributeName) -> Option<String> {
 fn get_static_attribute_value(value: &JSXAttributeValue) -> Option<String> {
     match value {
         JSXAttributeValue::StringLiteral(lit) => Some(lit.value.to_string()),
-        _ => None, // Dynamic values are not included in template
+        JSXAttributeValue::ExpressionContainer(container) => {
+            // Check if the expression is a static literal
+            match &container.expression {
+                JSXExpression::StringLiteral(string_lit) => Some(string_lit.value.to_string()),
+                JSXExpression::NumericLiteral(num_lit) => Some(num_lit.value.to_string()),
+                JSXExpression::BooleanLiteral(bool_lit) => Some(bool_lit.value.to_string()),
+                _ => None, // Dynamic values are not included in template
+            }
+        }
+        _ => None,
     }
 }
 

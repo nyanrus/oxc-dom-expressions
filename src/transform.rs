@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::optimizer::{TemplateOptimizer, TemplateStats};
 use crate::options::DomExpressionsOptions;
-use crate::template::{build_template, SlotType, Template};
+use crate::template::{SlotType, Template};
 use crate::utils::{is_component, should_delegate_event};
 
 /// The main DOM expressions transformer
@@ -115,6 +115,26 @@ impl<'a> DomExpressions<'a> {
         };
         
         Box::new_in(call_expr, self.allocator)
+    }
+
+    /// Create an IIFE that clones template and applies dynamic bindings
+    fn create_template_iife(
+        &mut self,
+        _jsx_elem: &JSXElement<'a>,
+        _template: &Template,
+        _template_var: &str,
+    ) -> Box<'a, CallExpression<'a>> {
+        // For now, just return a simple template call
+        // TODO: Implement full IIFE generation with dynamic bindings
+        // This requires generating:
+        // - Arrow function expression
+        // - Variable declarations for element references
+        // - Calls to runtime functions (spread, effect, classList, etc.)
+        // - Return statement
+        
+        // Temporary: just create a simple call
+        let template_var_str = self.allocator.alloc_str(_template_var);
+        self.create_template_call(template_var_str)
     }
 
     /// Create import statement for runtime functions
@@ -424,7 +444,7 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
 
         // Handle JSX elements
         // Build a template from the JSX element
-        let template = build_template(elem);
+        let template = crate::template::build_template_with_options(elem, Some(&self.options));
         
         // Record template for optimization analysis
         self.optimizer.record_template(template.clone());
@@ -525,7 +545,7 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
     }
 
     fn exit_expression(&mut self, expr: &mut Expression<'a>, _ctx: &mut TraverseCtx<'a, ()>) {
-        // Replace JSX elements with template calls
+        // Replace JSX elements with template calls or IIFEs
         match expr {
             Expression::JSXElement(jsx_elem) => {
                 // Check if this is a component
@@ -541,17 +561,22 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
                 }
 
                 // Build template and get the template variable
-                let template = build_template(jsx_elem.as_ref());
+                let template = crate::template::build_template_with_options(jsx_elem.as_ref(), Some(&self.options));
                 let template_var = self.get_template_var(&template.html);
                 
-                // Allocate the template variable string so it lives for 'a
-                let template_var_str = self.allocator.alloc_str(&template_var);
+                // Check if this template has dynamic content
+                let has_dynamic_content = !template.dynamic_slots.is_empty();
                 
-                // Create a call expression to clone the template
-                let call_expr = self.create_template_call(template_var_str);
-                
-                // Replace the JSX element with the call expression
-                *expr = Expression::CallExpression(call_expr);
+                if has_dynamic_content {
+                    // Generate an IIFE with dynamic binding code
+                    let iife = self.create_template_iife(jsx_elem.as_ref(), &template, &template_var);
+                    *expr = Expression::CallExpression(iife);
+                } else {
+                    // Simple template call for static content
+                    let template_var_str = self.allocator.alloc_str(&template_var);
+                    let call_expr = self.create_template_call(template_var_str);
+                    *expr = Expression::CallExpression(call_expr);
+                }
             }
             Expression::JSXFragment(_) => {
                 // Handle fragments
