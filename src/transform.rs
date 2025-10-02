@@ -3,7 +3,7 @@
 use oxc_allocator::{Allocator, CloneIn};
 use oxc_ast::ast::*;
 use oxc_span::SPAN;
-use oxc_traverse::{Traverse, TraverseCtx};
+use oxc_traverse::{Ancestor, Traverse, TraverseCtx};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
@@ -301,6 +301,17 @@ impl<'a> Traverse<'a> for DomExpressions<'a> {
     }
 
     fn exit_jsx_element(&mut self, elem: &mut JSXElement<'a>, ctx: &mut TraverseCtx<'a>) {
+        // Check if this element is a child of another JSX element by matching on the parent
+        // If so, skip it - we only want to transform top-level JSX elements
+        let parent = ctx.parent();
+        match parent {
+            Ancestor::JSXElementChildren(_) | Ancestor::JSXFragmentChildren(_) => {
+                // This is a child of a JSX element or fragment, skip it
+                return;
+            }
+            _ => {}
+        }
+        
         // Check if this is a component or HTML element
         let tag_name = match &elem.opening_element.name {
             JSXElementName::Identifier(ident) => ident.name.as_str(),
