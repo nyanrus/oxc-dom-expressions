@@ -119,23 +119,219 @@ impl<'a> DomExpressions<'a> {
 
     /// Create import statement for runtime functions
     fn create_import_statement(&self) -> Option<Statement<'a>> {
-        // For now, return None - implementing full AST for import is complex
-        // This would create: import { template as _$template, ... } from "module_name";
-        None
+        use oxc_ast::ast::*;
+        
+        // Create import specifiers for each required import
+        let mut specifiers = OxcVec::new_in(self.allocator);
+        
+        // Sort imports for consistency
+        let mut sorted_imports: Vec<_> = self.required_imports.iter().collect();
+        sorted_imports.sort();
+        
+        for import_name in sorted_imports {
+            // Create local binding name (e.g., _$template for template)
+            let local_name = format!("_${}", import_name);
+            let local = BindingIdentifier {
+                span: SPAN,
+                name: Atom::from(self.allocator.alloc_str(&local_name)),
+                symbol_id: None.into(),
+            };
+            
+            // Create imported name
+            let imported = ModuleExportName::IdentifierName(IdentifierName {
+                span: SPAN,
+                name: Atom::from(self.allocator.alloc_str(import_name)),
+            });
+            
+            // Create import specifier
+            let specifier = ImportDeclarationSpecifier::ImportSpecifier(
+                Box::new_in(
+                    ImportSpecifier {
+                        span: SPAN,
+                        imported,
+                        local,
+                        import_kind: ImportOrExportKind::Value,
+                    },
+                    self.allocator,
+                )
+            );
+            
+            specifiers.push(specifier);
+        }
+        
+        // Create source string
+        let source = StringLiteral {
+            span: SPAN,
+            value: Atom::from(self.allocator.alloc_str(&self.options.module_name)),
+            raw: None,
+            lone_surrogates: false,
+        };
+        
+        // Create import declaration
+        let import_decl = ImportDeclaration {
+            span: SPAN,
+            specifiers: Some(specifiers),
+            source,
+            with_clause: None,
+            import_kind: ImportOrExportKind::Value,
+            phase: None, // No phase for regular imports
+        };
+        
+        // Wrap in ModuleDeclaration and Statement
+        let module_decl = ModuleDeclaration::ImportDeclaration(
+            Box::new_in(import_decl, self.allocator)
+        );
+        
+        Some(Statement::from(module_decl))
     }
 
     /// Create template variable declarations
     fn create_template_declarations(&self) -> Option<Statement<'a>> {
-        // For now, return None - implementing full AST for var declarations is complex
-        // This would create: var _tmpl$ = _$template(`<html>`), ...
-        None
+        use oxc_ast::ast::*;
+        
+        if self.template_map.is_empty() {
+            return None;
+        }
+        
+        // Create variable declarators for all templates
+        let mut declarators = OxcVec::new_in(self.allocator);
+        
+        // Sort template map by variable name to get consistent order
+        let mut sorted_templates: Vec<_> = self.template_map.iter().collect();
+        sorted_templates.sort_by(|a, b| a.1.cmp(b.1));
+        
+        for (html, var_name) in sorted_templates {
+            // Create the binding pattern for the variable
+            let id = BindingPattern {
+                kind: BindingPatternKind::BindingIdentifier(
+                    Box::new_in(
+                        BindingIdentifier {
+                            span: SPAN,
+                            name: Atom::from(self.allocator.alloc_str(var_name)),
+                            symbol_id: None.into(),
+                        },
+                        self.allocator,
+                    )
+                ),
+                type_annotation: None,
+                optional: false,
+            };
+            
+            // Create template string argument
+            let template_string = StringLiteral {
+                span: SPAN,
+                value: Atom::from(self.allocator.alloc_str(html)),
+                raw: None,
+                lone_surrogates: false,
+            };
+            
+            // Create call to _$template(...)
+            let template_fn = IdentifierReference {
+                span: SPAN,
+                name: Atom::from("_$template"),
+                reference_id: None.into(),
+            };
+            
+            let mut args = OxcVec::new_in(self.allocator);
+            args.push(Argument::StringLiteral(
+                Box::new_in(template_string, self.allocator)
+            ));
+            
+            let init_call = CallExpression {
+                span: SPAN,
+                callee: Expression::Identifier(Box::new_in(template_fn, self.allocator)),
+                arguments: args,
+                optional: false,
+                type_arguments: None,
+                pure: true, // Mark as /*#__PURE__*/
+            };
+            
+            // Create variable declarator
+            let declarator = VariableDeclarator {
+                span: SPAN,
+                kind: VariableDeclarationKind::Var,
+                id,
+                init: Some(Expression::CallExpression(Box::new_in(init_call, self.allocator))),
+                definite: false,
+            };
+            
+            declarators.push(declarator);
+        }
+        
+        // Create variable declaration
+        let var_decl = VariableDeclaration {
+            span: SPAN,
+            kind: VariableDeclarationKind::Var,
+            declarations: declarators,
+            declare: false,
+        };
+        
+        Some(Statement::VariableDeclaration(
+            Box::new_in(var_decl, self.allocator)
+        ))
     }
 
     /// Create delegateEvents call
     fn create_delegate_events_call(&self) -> Option<Statement<'a>> {
-        // For now, return None - implementing full AST for function call is complex
-        // This would create: _$delegateEvents(["click", "input"]);
-        None
+        use oxc_ast::ast::*;
+        
+        if self.delegated_events.is_empty() {
+            return None;
+        }
+        
+        // Create array of event names
+        let mut elements = OxcVec::new_in(self.allocator);
+        let mut sorted_events: Vec<_> = self.delegated_events.iter().collect();
+        sorted_events.sort();
+        
+        for event in sorted_events {
+            let string_lit = StringLiteral {
+                span: SPAN,
+                value: Atom::from(self.allocator.alloc_str(event)),
+                raw: None,
+                lone_surrogates: false,
+            };
+            elements.push(ArrayExpressionElement::StringLiteral(
+                Box::new_in(string_lit, self.allocator)
+            ));
+        }
+        
+        let array_expr = ArrayExpression {
+            span: SPAN,
+            elements,
+        };
+        
+        // Create call to _$delegateEvents([...])
+        let fn_name = IdentifierReference {
+            span: SPAN,
+            name: Atom::from("_$delegateEvents"),
+            reference_id: None.into(),
+        };
+        
+        let mut args = OxcVec::new_in(self.allocator);
+        args.push(Argument::ArrayExpression(
+            Box::new_in(array_expr, self.allocator)
+        ));
+        
+        let call_expr = CallExpression {
+            span: SPAN,
+            callee: Expression::Identifier(Box::new_in(fn_name, self.allocator)),
+            arguments: args,
+            optional: false,
+            type_arguments: None,
+            pure: false,
+        };
+        
+        // Wrap in expression statement
+        Some(Statement::ExpressionStatement(
+            Box::new_in(
+                ExpressionStatement {
+                    span: SPAN,
+                    expression: Expression::CallExpression(Box::new_in(call_expr, self.allocator)),
+                },
+                self.allocator,
+            )
+        ))
     }
 }
 
