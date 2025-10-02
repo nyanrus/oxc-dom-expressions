@@ -198,10 +198,10 @@ fn analyze_source(source: &str, options: DomExpressionsOptions) -> (oxc_dom_expr
     let semantic = SemanticBuilder::new()
         .build(&program)
         .semantic;
-    let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+    let scoping = semantic.into_scoping();
     
     let mut transformer = DomExpressions::new(&allocator, options);
-    traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+    traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
     
     let stats = transformer.get_template_stats();
     let reused = transformer.get_reused_templates();

@@ -57,7 +57,7 @@ fn demonstrate_transformation(source: &str) {
     let semantic = SemanticBuilder::new()
         .build(&program)
         .semantic;
-    let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+    let scoping = semantic.into_scoping();
     
     let options = DomExpressionsOptions::default();
     let mut transformer = DomExpressions::new(&allocator, options);
@@ -67,7 +67,7 @@ fn demonstrate_transformation(source: &str) {
     println!("  Effect wrapper: {}", transformer.options().effect_wrapper);
     println!("  Delegate events: {}", transformer.options().delegate_events);
     
-    traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+    traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
     
     println!("\nAfter transformation:");
     println!("  ✓ JSX elements processed");

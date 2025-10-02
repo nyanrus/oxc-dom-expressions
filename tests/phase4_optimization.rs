@@ -25,11 +25,11 @@ fn test_template_deduplication() {
     let semantic = SemanticBuilder::new()
         .build(&program)
         .semantic;
-    let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+    let scoping = semantic.into_scoping();
     
     let options = DomExpressionsOptions::default();
     let mut transformer = DomExpressions::new(&allocator, options);
-    traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+    traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
     
     // Get template statistics
     let stats = transformer.get_template_stats();
@@ -56,11 +56,11 @@ fn test_multiple_unique_templates() {
     let semantic = SemanticBuilder::new()
         .build(&program)
         .semantic;
-    let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+    let scoping = semantic.into_scoping();
     
     let options = DomExpressionsOptions::default();
     let mut transformer = DomExpressions::new(&allocator, options);
-    traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+    traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
     
     let stats = transformer.get_template_stats();
     
@@ -87,11 +87,11 @@ fn test_partial_deduplication() {
     let semantic = SemanticBuilder::new()
         .build(&program)
         .semantic;
-    let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+    let scoping = semantic.into_scoping();
     
     let options = DomExpressionsOptions::default();
     let mut transformer = DomExpressions::new(&allocator, options);
-    traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+    traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
     
     let stats = transformer.get_template_stats();
     
@@ -119,11 +119,11 @@ fn test_deduplication_ratio() {
     let semantic = SemanticBuilder::new()
         .build(&program)
         .semantic;
-    let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+    let scoping = semantic.into_scoping();
     
     let options = DomExpressionsOptions::default();
     let mut transformer = DomExpressions::new(&allocator, options);
-    traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+    traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
     
     let stats = transformer.get_template_stats();
     
@@ -149,11 +149,11 @@ fn test_reused_templates_tracking() {
     let semantic = SemanticBuilder::new()
         .build(&program)
         .semantic;
-    let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+    let scoping = semantic.into_scoping();
     
     let options = DomExpressionsOptions::default();
     let mut transformer = DomExpressions::new(&allocator, options);
-    traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+    traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
     
     let reused = transformer.get_reused_templates();
     
@@ -180,11 +180,11 @@ fn test_static_vs_dynamic_templates() {
     let semantic = SemanticBuilder::new()
         .build(&program)
         .semantic;
-    let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+    let scoping = semantic.into_scoping();
     
     let options = DomExpressionsOptions::default();
     let mut transformer = DomExpressions::new(&allocator, options);
-    traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+    traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
     
     let stats = transformer.get_template_stats();
     
@@ -209,11 +209,11 @@ fn test_template_stats_space_saved() {
     let semantic = SemanticBuilder::new()
         .build(&program)
         .semantic;
-    let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+    let scoping = semantic.into_scoping();
     
     let options = DomExpressionsOptions::default();
     let mut transformer = DomExpressions::new(&allocator, options);
-    traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+    traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
     
     let stats = transformer.get_template_stats();
     
@@ -267,11 +267,11 @@ fn test_nested_element_deduplication() {
     let semantic = SemanticBuilder::new()
         .build(&program)
         .semantic;
-    let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+    let scoping = semantic.into_scoping();
     
     let options = DomExpressionsOptions::default();
     let mut transformer = DomExpressions::new(&allocator, options);
-    traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+    traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
     
     let stats = transformer.get_template_stats();
     
@@ -296,11 +296,11 @@ fn test_dynamic_content_prevents_deduplication() {
     let semantic = SemanticBuilder::new()
         .build(&program)
         .semantic;
-    let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+    let scoping = semantic.into_scoping();
     
     let options = DomExpressionsOptions::default();
     let mut transformer = DomExpressions::new(&allocator, options);
-    traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+    traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
     
     let stats = transformer.get_template_stats();
     
@@ -325,11 +325,11 @@ fn test_attributes_affect_deduplication() {
     let semantic = SemanticBuilder::new()
         .build(&program)
         .semantic;
-    let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+    let scoping = semantic.into_scoping();
     
     let options = DomExpressionsOptions::default();
     let mut transformer = DomExpressions::new(&allocator, options);
-    traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+    traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
     
     let stats = transformer.get_template_stats();
     
@@ -355,14 +355,14 @@ fn test_ssr_mode_optimization() {
     let semantic = SemanticBuilder::new()
         .build(&program)
         .semantic;
-    let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+    let scoping = semantic.into_scoping();
     
     let options = DomExpressionsOptions {
         generate: GenerateMode::Ssr,
         ..Default::default()
     };
     let mut transformer = DomExpressions::new(&allocator, options);
-    traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+    traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
     
     let stats = transformer.get_template_stats();
     

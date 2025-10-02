@@ -42,7 +42,7 @@ fn transform_jsx(source: &str) -> Result<String, String> {
     let semantic = SemanticBuilder::new()
         .build(&program)
         .semantic;
-    let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+    let scoping = semantic.into_scoping();
     
     // Use the same options as the babel plugin dom.spec.js
     let options = DomExpressionsOptions::new("r-dom")
@@ -50,7 +50,7 @@ fn transform_jsx(source: &str) -> Result<String, String> {
         .with_generate(oxc_dom_expressions::GenerateMode::Dom);
     
     let mut transformer = DomExpressions::new(&allocator, options);
-    traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+    traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
     
     // Generate code from the transformed AST
     let generated = Codegen::new().build(&program).code;

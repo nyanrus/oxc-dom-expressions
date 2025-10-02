@@ -22,12 +22,12 @@ fn test_template_generation_simple_element() {
     let semantic = SemanticBuilder::new()
         .build(&program)
         .semantic;
-    let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+    let scoping = semantic.into_scoping();
     
     // Apply transformation
     let options = DomExpressionsOptions::default();
     let mut transformer = DomExpressions::new(&allocator, options);
-    traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+    traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
     
     // The transformer should have collected one template
     // (This demonstrates the infrastructure is working)
@@ -49,11 +49,11 @@ fn test_transformer_collects_templates() {
     let semantic = SemanticBuilder::new()
         .build(&program)
         .semantic;
-    let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+    let scoping = semantic.into_scoping();
     
     let options = DomExpressionsOptions::default();
     let mut transformer = DomExpressions::new(&allocator, options);
-    traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+    traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
     
     // Should have processed JSX elements
     assert_eq!(transformer.options().delegate_events, true);
@@ -71,11 +71,11 @@ fn test_transformer_tracks_dynamic_content() {
     let semantic = SemanticBuilder::new()
         .build(&program)
         .semantic;
-    let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+    let scoping = semantic.into_scoping();
     
     let options = DomExpressionsOptions::default();
     let mut transformer = DomExpressions::new(&allocator, options);
-    traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+    traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
     
     // Transformer has processed the JSX
     assert!(transformer.options().effect_wrapper == "effect");
@@ -93,14 +93,14 @@ fn test_custom_effect_wrapper() {
     let semantic = SemanticBuilder::new()
         .build(&program)
         .semantic;
-    let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+    let scoping = semantic.into_scoping();
     
     let options = DomExpressionsOptions {
         effect_wrapper: String::from("createEffect"),
         ..Default::default()
     };
     let mut transformer = DomExpressions::new(&allocator, options);
-    traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+    traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
     
     assert_eq!(transformer.options().effect_wrapper, "createEffect");
 }
@@ -124,11 +124,11 @@ fn test_nested_elements() {
     let semantic = SemanticBuilder::new()
         .build(&program)
         .semantic;
-    let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+    let scoping = semantic.into_scoping();
     
     let options = DomExpressionsOptions::default();
     let mut transformer = DomExpressions::new(&allocator, options);
-    traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+    traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
     
     // Should have processed the JSX element
     assert_eq!(transformer.options().module_name, "solid-js/web");
@@ -148,7 +148,7 @@ fn test_ssr_mode_configuration() {
     let semantic = SemanticBuilder::new()
         .build(&program)
         .semantic;
-    let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+    let scoping = semantic.into_scoping();
     
     let options = DomExpressionsOptions {
         generate: GenerateMode::Ssr,
@@ -156,7 +156,7 @@ fn test_ssr_mode_configuration() {
         ..Default::default()
     };
     let mut transformer = DomExpressions::new(&allocator, options);
-    traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+    traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
     
     assert_eq!(transformer.options().generate, GenerateMode::Ssr);
     assert_eq!(transformer.options().hydratable, true);

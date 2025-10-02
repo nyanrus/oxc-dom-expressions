@@ -41,14 +41,14 @@ fn transform_jsx_ssr(source: &str) -> Result<String, String> {
     let semantic = SemanticBuilder::new()
         .build(&program)
         .semantic;
-    let (symbols, scopes) = semantic.into_symbol_table_and_scope_tree();
+    let scoping = semantic.into_scoping();
     
     // Use SSR mode options
     let options = DomExpressionsOptions::new("r-server")
         .with_generate(GenerateMode::Ssr);
     
     let mut transformer = DomExpressions::new(&allocator, options);
-    traverse_mut(&mut transformer, &allocator, &mut program, symbols, scopes);
+    traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
     
     // Generate code from the transformed AST
     let generated = Codegen::new().build(&program).code;
