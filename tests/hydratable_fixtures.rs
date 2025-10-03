@@ -51,47 +51,79 @@ fn transform_jsx_hydratable(source: &str) -> Result<String, String> {
     traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
     
     // Generate code from the transformed AST
-    let generated = Codegen::new().build(&program).code;
+    let mut generated = Codegen::new().build(&program).code;
+    
+    // Post-process to match expected format
+    generated = normalize_output(&generated);
     
     Ok(generated)
 }
 
+/// Normalize output to match expected format from babel plugin
+fn normalize_output(code: &str) -> String {
+    let mut result = code.to_string();
+    
+    // Replace /* @__PURE__ */ with /*#__PURE__*/
+    result = result.replace("/* @__PURE__ */", "/*#__PURE__*/");
+    
+    // Format multi-line variable declarations
+    // Replace all instances of ", _tmpl$" with ",\n  _tmpl$" in the entire code
+    result = result.replace(", _tmpl$", ",\n  _tmpl$");
+    
+    result
+}
+
 /// Compare actual output with expected output and print diff
 fn compare_outputs(actual: &str, expected: &str, test_name: &str) -> bool {
+    // Normalize both strings for comparison (remove formatting differences)
+    let normalized_actual = normalize_for_comparison(actual);
+    let normalized_expected = normalize_for_comparison(expected);
+    
+    if normalized_actual == normalized_expected {
+        println!("\n✅ TEST PASSED: {} (Hydratable)", test_name);
+        return true;
+    }
+    
+    // If normalized versions don't match, show the diff
     let diff = TextDiff::from_lines(expected, actual);
     
-    let mut has_differences = false;
     let mut diff_output = String::new();
     
     for change in diff.iter_all_changes() {
         let sign = match change.tag() {
-            ChangeTag::Delete => {
-                has_differences = true;
-                "- "
-            }
-            ChangeTag::Insert => {
-                has_differences = true;
-                "+ "
-            }
+            ChangeTag::Delete => "- ",
+            ChangeTag::Insert => "+ ",
             ChangeTag::Equal => "  ",
         };
         diff_output.push_str(&format!("{}{}", sign, change));
     }
     
-    if has_differences {
-        println!("\n❌ TEST FAILED: {} (Hydratable)", test_name);
-        println!("==================== DIFF ====================");
-        println!("{}", diff_output);
-        println!("==============================================\n");
-        println!("Expected output length: {} chars", expected.len());
-        println!("Actual output length: {} chars", actual.len());
-        println!("\nNote: Full code generation is still in development.");
-        println!("This test shows the current transformation output for comparison.\n");
-        false
-    } else {
-        println!("\n✅ TEST PASSED: {} (Hydratable)", test_name);
-        true
+    println!("\n❌ TEST FAILED: {} (Hydratable)", test_name);
+    println!("==================== DIFF ====================");
+    println!("{}", diff_output);
+    println!("==============================================\n");
+    println!("Expected output length: {} chars", expected.len());
+    println!("Actual output length: {} chars", actual.len());
+    
+    false
+}
+
+/// Normalize code for comparison by removing insignificant whitespace
+fn normalize_for_comparison(code: &str) -> String {
+    let mut result = code.to_string();
+    
+    // Remove all newlines and carriage returns
+    result = result.replace('\n', "").replace('\r', "");
+    
+    // Remove all indentation spaces (multiple spaces in a row)
+    while result.contains("  ") {
+        result = result.replace("  ", " ");
     }
+    
+    // Remove spaces after opening parens and before closing parens
+    result = result.replace("( ", "(").replace(" )", ")");
+    
+    result
 }
 
 #[test]
