@@ -24,6 +24,9 @@ pub struct DynamicSlot {
     pub path: Vec<String>,
     /// Type of dynamic content (text, attribute, etc.)
     pub slot_type: SlotType,
+    /// Path to the marker node (for text content insertion positioning)
+    /// None if this is a trailing expression (insert at end with null)
+    pub marker_path: Option<Vec<String>>,
 }
 
 /// Type of dynamic slot
@@ -93,12 +96,14 @@ fn build_element_html(
                     slots.push(DynamicSlot {
                         path: path.clone(),
                         slot_type: SlotType::Ref,
+                        marker_path: None,
                     });
                 } else if is_class_list_binding(&name) {
                     // ClassList binding
                     slots.push(DynamicSlot {
                         path: path.clone(),
                         slot_type: SlotType::ClassList,
+                        marker_path: None,
                     });
                 } else if is_style_binding(&name) && attr.value.is_some() {
                     // Style object binding
@@ -106,6 +111,7 @@ fn build_element_html(
                         slots.push(DynamicSlot {
                             path: path.clone(),
                             slot_type: SlotType::StyleObject,
+                            marker_path: None,
                         });
                     } else if let Some(value) = &attr.value {
                         // Static style string
@@ -119,6 +125,7 @@ fn build_element_html(
                         slots.push(DynamicSlot {
                             path: path.clone(),
                             slot_type: SlotType::OnEvent(event_name.to_string()),
+                            marker_path: None,
                         });
                     }
                 } else if is_on_capture_event(&name) {
@@ -127,6 +134,7 @@ fn build_element_html(
                         slots.push(DynamicSlot {
                             path: path.clone(),
                             slot_type: SlotType::OnCaptureEvent(event_name.to_string()),
+                            marker_path: None,
                         });
                     }
                 } else if is_event_handler(&name) {
@@ -135,6 +143,7 @@ fn build_element_html(
                         slots.push(DynamicSlot {
                             path: path.clone(),
                             slot_type: SlotType::EventHandler(event_name.to_string()),
+                            marker_path: None,
                         });
                     }
                 } else if let Some(value) = &attr.value {
@@ -147,6 +156,7 @@ fn build_element_html(
                         slots.push(DynamicSlot {
                             path: path.clone(),
                             slot_type: SlotType::Attribute(name.clone()),
+                            marker_path: None,
                         });
                     }
                 } else {
@@ -163,23 +173,35 @@ fn build_element_html(
     if !is_void_element(&tag_name) {
         let child_path_start = path.len();
         
+        // Track whether we've added any child nodes (for firstChild vs nextSibling)
+        let mut has_previous_node = false;
+        
         for (i, child) in element.children.iter().enumerate() {
             // Check if this is the last child
             let is_last_child = i == element.children.len() - 1;
             
-            // Update path for element children
-            if matches!(child, JSXChild::Element(_)) {
-                if i == 0 || !element.children[..i].iter().any(|c| matches!(c, JSXChild::Element(_))) {
-                    path.push("firstChild".to_string());
-                } else {
-                    // Replace last element with nextSibling
-                    if let Some(last) = path.last_mut() {
-                        *last = "nextSibling".to_string();
-                    }
+            // Check if next child is an expression (for marker logic)
+            let next_is_expression = if i + 1 < element.children.len() {
+                matches!(element.children[i + 1], JSXChild::ExpressionContainer(_))
+            } else {
+                false
+            };
+            
+            // Before processing child, update path based on whether this is first node or not
+            if !has_previous_node {
+                // This is the first actual DOM node
+                path.push("firstChild".to_string());
+                has_previous_node = true;
+            } else {
+                // We've had previous nodes, so this is a nextSibling
+                if let Some(last) = path.last_mut() {
+                    *last = "nextSibling".to_string();
                 }
             }
             
-            build_child_html_with_context(child, html, slots, path, is_last_child);
+            // Process the child - this may add markers or elements to HTML
+            // and will add dynamic slots as needed
+            build_child_html_with_context(child, html, slots, path, is_last_child, next_is_expression);
         }
         
         // Restore path
@@ -197,6 +219,7 @@ fn build_child_html_with_context(
     slots: &mut Vec<DynamicSlot>,
     path: &mut Vec<String>,
     is_last_child: bool,
+    next_is_expression: bool,
 ) {
     match child {
         JSXChild::Text(text) => {
@@ -243,14 +266,26 @@ fn build_child_html_with_context(
                 }
                 _ => {}
             }
-            // Dynamic content - add marker to template ONLY if not the last child
-            // and record the slot
-            if !is_last_child {
+            // Dynamic content - add marker only if:
+            // 1. This is not the last child AND
+            // 2. The next child is also an expression (no static content to use as marker)
+            let marker_path = if !is_last_child && next_is_expression {
                 html.push_str("<!>");
-            }
+                // The marker we just added is at the current path
+                Some(path.clone())
+            } else if !is_last_child {
+                // Next child is static content (text or element) - use it as marker
+                // The next child will be at the current path (since this expression doesn't add a DOM node)
+                Some(path.clone())
+            } else {
+                // No marker for trailing expressions
+                None
+            };
+            
             slots.push(DynamicSlot {
-                path: path.clone(),
+                path: Vec::new(),  // Insert into parent element (empty path)
                 slot_type: SlotType::TextContent,
+                marker_path,
             });
         }
         JSXChild::Fragment(_) | JSXChild::Spread(_) => {

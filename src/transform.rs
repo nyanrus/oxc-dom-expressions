@@ -132,11 +132,11 @@ impl<'a> DomExpressions<'a> {
         
         // 2. Create template cloning statement and element references
         // var _el$ = _tmpl$(), _el$2 = _el$.firstChild, ...
-        let (root_var, elem_decls) = self.create_element_declarations(template, template_var);
+        let (root_var, elem_decls, path_to_var) = self.create_element_declarations(template, template_var);
         body_stmts.push(elem_decls);
         
         // 3. Create runtime calls for dynamic content
-        let runtime_stmts = self.create_runtime_calls_from_expressions(&expressions, template, &root_var);
+        let runtime_stmts = self.create_runtime_calls_from_expressions(&expressions, template, &root_var, &path_to_var);
         body_stmts.extend(runtime_stmts);
         
         // 4. Create return statement
@@ -193,11 +193,12 @@ impl<'a> DomExpressions<'a> {
         &mut self,
         template: &Template,
         template_var: &str,
-    ) -> (String, Statement<'a>) {
+    ) -> (String, Statement<'a>, std::collections::HashMap<Vec<String>, String>) {
         use oxc_ast::ast::*;
         
         // Generate unique variable names
         let root_var = self.generate_element_var();
+        let mut path_to_var = std::collections::HashMap::new();
         
         // Create declarators
         let mut declarators = OxcVec::new_in(self.allocator);
@@ -234,10 +235,12 @@ impl<'a> DomExpressions<'a> {
         let mut created_refs = std::collections::HashSet::new();
         
         for slot in &template.dynamic_slots {
+            // Generate reference for slot path if needed
             if !slot.path.is_empty() && !created_refs.contains(&slot.path) {
                 created_refs.insert(slot.path.clone());
                 
                 let elem_var = self.generate_element_var();
+                path_to_var.insert(slot.path.clone(), elem_var.clone());
                 let elem_id = BindingPattern {
                     kind: BindingPatternKind::BindingIdentifier(
                         Box::new_in(
@@ -290,6 +293,67 @@ impl<'a> DomExpressions<'a> {
                     definite: false,
                 });
             }
+            
+            // Generate reference for marker path if needed
+            if let Some(marker_path) = &slot.marker_path {
+                if !marker_path.is_empty() && !created_refs.contains(marker_path) {
+                    created_refs.insert(marker_path.clone());
+                    
+                    let elem_var = self.generate_element_var();
+                    path_to_var.insert(marker_path.clone(), elem_var.clone());
+                    let elem_id = BindingPattern {
+                        kind: BindingPatternKind::BindingIdentifier(
+                            Box::new_in(
+                                BindingIdentifier {
+                                    span: SPAN,
+                                    name: Atom::from(self.allocator.alloc_str(&elem_var)),
+                                    symbol_id: None.into(),
+                                },
+                                self.allocator,
+                            )
+                        ),
+                        type_annotation: None,
+                        optional: false,
+                    };
+                    
+                    // Build path expression: _el$.firstChild.nextSibling...
+                    let mut expr = Expression::Identifier(
+                        Box::new_in(
+                            IdentifierReference {
+                                span: SPAN,
+                                name: Atom::from(self.allocator.alloc_str(&root_var)),
+                                reference_id: None.into(),
+                            },
+                            self.allocator,
+                        )
+                    );
+                    
+                    for segment in marker_path {
+                        expr = Expression::StaticMemberExpression(
+                            Box::new_in(
+                                StaticMemberExpression {
+                                    span: SPAN,
+                                    object: expr,
+                                    property: IdentifierName {
+                                        span: SPAN,
+                                        name: Atom::from(self.allocator.alloc_str(segment)),
+                                    },
+                                    optional: false,
+                                },
+                                self.allocator,
+                            )
+                        );
+                    }
+                    
+                    declarators.push(VariableDeclarator {
+                        span: SPAN,
+                        kind: VariableDeclarationKind::Var,
+                        id: elem_id,
+                        init: Some(expr),
+                        definite: false,
+                    });
+                }
+            }
         }
         
         let var_decl = VariableDeclaration {
@@ -299,7 +363,7 @@ impl<'a> DomExpressions<'a> {
             declare: false,
         };
         
-        (root_var, Statement::VariableDeclaration(Box::new_in(var_decl, self.allocator)))
+        (root_var, Statement::VariableDeclaration(Box::new_in(var_decl, self.allocator)), path_to_var)
     }
     
     /// Generate unique element variable name
@@ -318,30 +382,33 @@ impl<'a> DomExpressions<'a> {
         expressions: &[Expression<'a>],
         template: &Template,
         root_var: &str,
+        path_to_var: &std::collections::HashMap<Vec<String>, String>,
     ) -> OxcVec<'a, Statement<'a>> {
         let mut stmts = OxcVec::new_in(self.allocator);
         
         // Track which expression we're at
         let mut expr_index = 0;
-        let mut elem_var_counter = 1;
         
         // For each dynamic slot, generate the appropriate runtime call
         for slot in &template.dynamic_slots {
-            // Determine the element variable name for this slot
-            let element_var = if slot.path.is_empty() {
-                root_var.to_string()
-            } else {
-                elem_var_counter += 1;
-                format!("_el${}", elem_var_counter)
-            };
-            
             match &slot.slot_type {
                 SlotType::TextContent => {
                     // Generate insert call
                     self.add_import("insert");
                     
                     if expr_index < expressions.len() {
-                        if let Some(insert_stmt) = self.create_insert_call(&element_var, &expressions[expr_index]) {
+                        // Determine marker variable (3rd argument to insert)
+                        let marker_var = if let Some(marker_path) = &slot.marker_path {
+                            path_to_var.get(marker_path).map(|s| s.as_str())
+                        } else {
+                            None
+                        };
+                        
+                        if let Some(insert_stmt) = self.create_insert_call_with_marker(
+                            root_var,
+                            &expressions[expr_index],
+                            marker_var,
+                        ) {
                             stmts.push(insert_stmt);
                         }
                         expr_index += 1;
@@ -402,10 +469,20 @@ impl<'a> DomExpressions<'a> {
     
     /// Create an insert call statement
     fn create_insert_call(&self, element_var: &str, expr: &Expression<'a>) -> Option<Statement<'a>> {
+        self.create_insert_call_with_marker(element_var, expr, None)
+    }
+    
+    /// Create an insert call statement with optional marker
+    fn create_insert_call_with_marker(
+        &self,
+        element_var: &str,
+        expr: &Expression<'a>,
+        marker_var: Option<&str>,
+    ) -> Option<Statement<'a>> {
         use oxc_ast::ast::*;
         use oxc_allocator::CloneIn;
         
-        // Create call to _$insert(element, expression, null)
+        // Create call to _$insert(element, expression, marker)
         let insert_fn = IdentifierReference {
             span: SPAN,
             name: Atom::from("_$insert"),
@@ -425,16 +502,27 @@ impl<'a> DomExpressions<'a> {
         // Second argument: the expression (clone it)
         let expr_arg = Argument::from(expr.clone_in(self.allocator));
         
-        // Third argument: null (marker position)
-        let null_arg = Argument::NullLiteral(Box::new_in(
-            NullLiteral { span: SPAN },
-            self.allocator,
-        ));
+        // Third argument: marker position (either a variable reference or null)
+        let marker_arg = if let Some(marker) = marker_var {
+            Argument::Identifier(Box::new_in(
+                IdentifierReference {
+                    span: SPAN,
+                    name: Atom::from(self.allocator.alloc_str(marker)),
+                    reference_id: None.into(),
+                },
+                self.allocator,
+            ))
+        } else {
+            Argument::NullLiteral(Box::new_in(
+                NullLiteral { span: SPAN },
+                self.allocator,
+            ))
+        };
         
         let mut args = OxcVec::new_in(self.allocator);
         args.push(elem_arg);
         args.push(expr_arg);
-        args.push(null_arg);
+        args.push(marker_arg);
         
         let call_expr = CallExpression {
             span: SPAN,
