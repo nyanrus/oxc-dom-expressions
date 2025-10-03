@@ -244,6 +244,7 @@ mod tests {
             dynamic_slots: vec![DynamicSlot {
                 path: vec![],
                 slot_type: SlotType::TextContent,
+                marker_path: None,
             }],
         };
         
@@ -266,6 +267,7 @@ mod tests {
                 .map(|_| DynamicSlot {
                     path: vec![],
                     slot_type: SlotType::TextContent,
+                    marker_path: None,
                 })
                 .collect(),
         };
@@ -287,6 +289,7 @@ mod tests {
                 .map(|_| DynamicSlot {
                     path: vec![],
                     slot_type: SlotType::TextContent,
+                    marker_path: None,
                 })
                 .collect(),
         };
