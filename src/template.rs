@@ -205,15 +205,16 @@ fn build_child_html(
             // 2. Otherwise, collapse consecutive whitespace (including newlines) to single space
             // 3. Trim leading/trailing whitespace if it contains newlines
             
-            if text_value.trim().is_empty() {
-                // Pure whitespace - skip if it contains newlines
+            let normalized = if text_value.trim().is_empty() {
+                // Pure whitespace
                 if text_value.contains('\n') {
+                    // Formatting whitespace with newlines - skip it
                     return;
+                } else {
+                    // Intentional inline whitespace - preserve as-is
+                    text_value.to_string()
                 }
-                // Otherwise it's intentional space - preserve it
-            }
-            
-            let normalized = if text_value.contains('\n') {
+            } else if text_value.contains('\n') {
                 // Text with newlines - apply normalization
                 let mut result = text_value.to_string();
                 
