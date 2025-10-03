@@ -132,11 +132,11 @@ impl<'a> DomExpressions<'a> {
         
         // 2. Create template cloning statement and element references
         // var _el$ = _tmpl$(), _el$2 = _el$.firstChild, ...
-        let (root_var, elem_decls) = self.create_element_declarations(template, template_var);
+        let (root_var, element_var_map, elem_decls) = self.create_element_declarations(template, template_var);
         body_stmts.push(elem_decls);
         
         // 3. Create runtime calls for dynamic content
-        let runtime_stmts = self.create_runtime_calls(jsx_elem, template, &root_var);
+        let runtime_stmts = self.create_runtime_calls(jsx_elem, template, &root_var, &element_var_map);
         body_stmts.extend(runtime_stmts);
         
         // 4. Create return statement
@@ -188,16 +188,20 @@ impl<'a> DomExpressions<'a> {
     }
 
     /// Create element reference declarations
-    /// Returns (root_var_name, statement)
+    /// Returns (root_var_name, element_var_map, statement)
+    /// element_var_map maps paths to their variable names
     fn create_element_declarations(
         &mut self,
         template: &Template,
         template_var: &str,
-    ) -> (String, Statement<'a>) {
+    ) -> (String, HashMap<Vec<String>, String>, Statement<'a>) {
         use oxc_ast::ast::*;
         
         // Generate unique variable names
         let root_var = self.generate_element_var();
+        
+        // Track which paths map to which variables
+        let mut element_var_map = HashMap::new();
         
         // Create declarators
         let mut declarators = OxcVec::new_in(self.allocator);
@@ -238,6 +242,10 @@ impl<'a> DomExpressions<'a> {
                 created_refs.insert(slot.path.clone());
                 
                 let elem_var = self.generate_element_var();
+                
+                // Store the mapping
+                element_var_map.insert(slot.path.clone(), elem_var.clone());
+                
                 let elem_id = BindingPattern {
                     kind: BindingPatternKind::BindingIdentifier(
                         Box::new_in(
@@ -299,7 +307,7 @@ impl<'a> DomExpressions<'a> {
             declare: false,
         };
         
-        (root_var, Statement::VariableDeclaration(Box::new_in(var_decl, self.allocator)))
+        (root_var, element_var_map, Statement::VariableDeclaration(Box::new_in(var_decl, self.allocator)))
     }
     
     /// Generate unique element variable name
@@ -318,6 +326,7 @@ impl<'a> DomExpressions<'a> {
         jsx_elem: &JSXElement<'_>,
         template: &Template,
         root_var: &str,
+        element_var_map: &HashMap<Vec<String>, String>,
     ) -> OxcVec<'a, Statement<'a>> {
         let mut stmts = OxcVec::new_in(self.allocator);
         
@@ -336,7 +345,7 @@ impl<'a> DomExpressions<'a> {
                     // Generate insert call
                     self.add_import("insert");
                     if let Some(expr) = expressions.get(idx) {
-                        if let Some(stmt) = self.create_insert_call_from_expr(expr, &slot.path, root_var) {
+                        if let Some(stmt) = self.create_insert_call_from_expr(expr, &slot.path, root_var, element_var_map) {
                             stmts.push(stmt);
                         }
                     }
@@ -442,23 +451,20 @@ impl<'a> DomExpressions<'a> {
         expr: &Expression<'a>,
         path: &[String],
         root_var: &str,
+        element_var_map: &HashMap<Vec<String>, String>,
     ) -> Option<Statement<'a>> {
         use oxc_ast::ast::*;
         
-        // Determine the target element variable
-        let (target_var, marker_var) = if path.is_empty() {
-            // Inserting into root element
-            (root_var.to_string(), None)
+        // Determine the target element variable (always the root)
+        let target_var = root_var.to_string();
+        
+        // Determine the marker (where to insert relative to)
+        // If path is empty, marker is null (append at end)
+        // If path exists, use the element variable for that path as the marker
+        let marker_var = if path.is_empty() {
+            None
         } else {
-            // Need to find the element reference for this path
-            // For now, use a simplified approach
-            let elem_idx = path.len();
-            let target = if elem_idx == 0 {
-                root_var.to_string()
-            } else {
-                format!("_el${}", elem_idx + 1)
-            };
-            (target, Some("null"))
+            element_var_map.get(path).cloned()
         };
         
         // Create the _$insert call: _$insert(target, expression, marker)
@@ -485,11 +491,19 @@ impl<'a> DomExpressions<'a> {
         // Second argument: the expression to insert
         args.push(Argument::from(expr.clone_in(self.allocator)));
         
-        // Third argument: marker (null or nextSibling reference)
-        let marker_expr = if let Some(_marker) = marker_var {
-            // null literal
-            Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator))
+        // Third argument: marker (null or element reference)
+        let marker_expr = if let Some(marker) = marker_var {
+            // Reference to the marker element
+            Expression::Identifier(Box::new_in(
+                IdentifierReference {
+                    span: SPAN,
+                    name: Atom::from(self.allocator.alloc_str(&marker)),
+                    reference_id: None.into(),
+                },
+                self.allocator,
+            ))
         } else {
+            // null literal
             Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator))
         };
         args.push(Argument::from(marker_expr));
