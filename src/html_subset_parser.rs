@@ -37,23 +37,23 @@ pub enum HtmlNode {
 pub fn parse(html: &str) -> Vec<HtmlNode> {
     let mut chars = html.chars().peekable();
     let mut nodes = Vec::new();
-    
+
     while chars.peek().is_some() {
         if let Some(node) = parse_node(&mut chars) {
             nodes.push(node);
         }
     }
-    
+
     nodes
 }
 
 /// Parse a single HTML node
 fn parse_node(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<HtmlNode> {
     // Don't skip whitespace - check what we have first
-    
+
     if chars.peek() == Some(&'<') {
         chars.next(); // consume '<'
-        
+
         // Check if it's a marker node <!>
         if chars.peek() == Some(&'!') {
             chars.next(); // consume '!'
@@ -64,13 +64,13 @@ fn parse_node(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<HtmlNo
             // If not <!>, this is unexpected, treat as text
             return Some(HtmlNode::Text("<!".to_string()));
         }
-        
+
         // Check if it's a closing tag
         if chars.peek() == Some(&'/') {
             // This is a closing tag, return None to signal end of element
             return None;
         }
-        
+
         // Parse tag name
         let mut tag = String::new();
         while let Some(&ch) = chars.peek() {
@@ -80,7 +80,7 @@ fn parse_node(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<HtmlNo
             tag.push(ch);
             chars.next();
         }
-        
+
         // Parse attributes
         let mut attributes = Vec::new();
         loop {
@@ -92,12 +92,12 @@ fn parse_node(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<HtmlNo
                     break;
                 }
             }
-            
+
             // Check for end of tag
             if chars.peek() == Some(&'>') || chars.peek() == Some(&'/') {
                 break;
             }
-            
+
             // Parse attribute name
             let mut attr_name = String::new();
             while let Some(&ch) = chars.peek() {
@@ -107,11 +107,11 @@ fn parse_node(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<HtmlNo
                 attr_name.push(ch);
                 chars.next();
             }
-            
+
             if attr_name.is_empty() {
                 break;
             }
-            
+
             // Skip whitespace
             while let Some(&ch) = chars.peek() {
                 if ch.is_whitespace() {
@@ -120,12 +120,12 @@ fn parse_node(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<HtmlNo
                     break;
                 }
             }
-            
+
             // Check for '='
             let mut attr_value = String::new();
             if chars.peek() == Some(&'=') {
                 chars.next(); // consume '='
-                
+
                 // Skip whitespace
                 while let Some(&ch) = chars.peek() {
                     if ch.is_whitespace() {
@@ -134,7 +134,7 @@ fn parse_node(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<HtmlNo
                         break;
                     }
                 }
-                
+
                 // Parse attribute value
                 if let Some(&quote_ch) = chars.peek() {
                     if quote_ch == '"' || quote_ch == '\'' {
@@ -159,38 +159,38 @@ fn parse_node(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<HtmlNo
                     }
                 }
             }
-            
+
             attributes.push((attr_name, attr_value));
         }
-        
+
         // Check if self-closing or void element
         let is_void = is_void_tag(&tag);
         let mut self_closing = false;
-        
+
         if chars.peek() == Some(&'/') {
             chars.next(); // consume '/'
             self_closing = true;
         }
-        
+
         if chars.peek() == Some(&'>') {
             chars.next(); // consume '>'
         }
-        
+
         // Parse children for non-void elements
         let mut children = Vec::new();
         if !is_void && !self_closing {
             loop {
                 // Don't skip whitespace - it may be meaningful text content!
                 // Only check for what comes next
-                
+
                 // Check for closing tag by looking ahead
                 if chars.peek() == Some(&'<') {
                     let mut temp_chars = chars.clone();
                     temp_chars.next(); // consume '<'
-                    
+
                     if temp_chars.peek() == Some(&'/') {
                         temp_chars.next(); // consume '/'
-                        
+
                         // Check if this closing tag matches our opening tag
                         let mut closing_tag_name = String::new();
                         while let Some(&ch) = temp_chars.peek() {
@@ -200,7 +200,7 @@ fn parse_node(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<HtmlNo
                             closing_tag_name.push(ch);
                             temp_chars.next();
                         }
-                        
+
                         if closing_tag_name == tag {
                             // This is our closing tag, consume it
                             while let Some(&ch) = chars.peek() {
@@ -214,7 +214,7 @@ fn parse_node(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<HtmlNo
                         // Otherwise, it's a closing tag for a child element
                         // Let the recursive call handle it
                     }
-                    
+
                     // Try to parse a child element
                     if let Some(child) = parse_node(chars) {
                         children.push(child);
@@ -242,7 +242,7 @@ fn parse_node(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<HtmlNo
                 }
             }
         }
-        
+
         Some(HtmlNode::Element {
             tag,
             attributes,
@@ -271,8 +271,20 @@ fn parse_node(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<HtmlNo
 fn is_void_tag(tag: &str) -> bool {
     matches!(
         tag.to_lowercase().as_str(),
-        "area" | "base" | "br" | "col" | "embed" | "hr" | "img" | "input" |
-        "link" | "meta" | "param" | "source" | "track" | "wbr"
+        "area"
+            | "base"
+            | "br"
+            | "col"
+            | "embed"
+            | "hr"
+            | "img"
+            | "input"
+            | "link"
+            | "meta"
+            | "param"
+            | "source"
+            | "track"
+            | "wbr"
     )
 }
 
@@ -285,8 +297,14 @@ mod tests {
         let html = r#"<div id="main"></div>"#;
         let nodes = parse(html);
         assert_eq!(nodes.len(), 1);
-        
-        if let HtmlNode::Element { tag, attributes, children, .. } = &nodes[0] {
+
+        if let HtmlNode::Element {
+            tag,
+            attributes,
+            children,
+            ..
+        } = &nodes[0]
+        {
             assert_eq!(tag, "div");
             assert_eq!(attributes.len(), 1);
             assert_eq!(attributes[0].0, "id");
@@ -301,20 +319,30 @@ mod tests {
     fn test_parse_nested_elements() {
         let html = r#"<div><button><span>0</span></button></div>"#;
         let nodes = parse(html);
-        
+
         assert_eq!(nodes.len(), 1);
         if let HtmlNode::Element { tag, children, .. } = &nodes[0] {
             assert_eq!(tag, "div");
             assert_eq!(children.len(), 1);
-            
-            if let HtmlNode::Element { tag: tag2, children: children2, .. } = &children[0] {
+
+            if let HtmlNode::Element {
+                tag: tag2,
+                children: children2,
+                ..
+            } = &children[0]
+            {
                 assert_eq!(tag2, "button");
                 assert_eq!(children2.len(), 1);
-                
-                if let HtmlNode::Element { tag: tag3, children: children3, .. } = &children2[0] {
+
+                if let HtmlNode::Element {
+                    tag: tag3,
+                    children: children3,
+                    ..
+                } = &children2[0]
+                {
                     assert_eq!(tag3, "span");
                     assert_eq!(children3.len(), 1);
-                    
+
                     if let HtmlNode::Text(text) = &children3[0] {
                         assert_eq!(text, "0");
                     } else {
@@ -335,13 +363,18 @@ mod tests {
     fn test_parse_nested_divs() {
         let html = r#"<div><div><button></button></div></div>"#;
         let nodes = parse(html);
-        
+
         assert_eq!(nodes.len(), 1);
         if let HtmlNode::Element { tag, children, .. } = &nodes[0] {
             assert_eq!(tag, "div");
             assert_eq!(children.len(), 1, "Outer div should have 1 child");
-            
-            if let HtmlNode::Element { tag: tag2, children: children2, .. } = &children[0] {
+
+            if let HtmlNode::Element {
+                tag: tag2,
+                children: children2,
+                ..
+            } = &children[0]
+            {
                 assert_eq!(tag2, "div");
                 assert_eq!(children2.len(), 1, "Inner div should have 1 child (button)");
             } else {
@@ -356,19 +389,24 @@ mod tests {
     fn test_parse_with_text_and_element() {
         let html = r#"<div><noscript>No JS!!<style>div</style></noscript></div>"#;
         let nodes = parse(html);
-        
+
         if let HtmlNode::Element { children, .. } = &nodes[0] {
-            if let HtmlNode::Element { tag, children: noscript_children, .. } = &children[0] {
+            if let HtmlNode::Element {
+                tag,
+                children: noscript_children,
+                ..
+            } = &children[0]
+            {
                 assert_eq!(tag, "noscript");
                 assert_eq!(noscript_children.len(), 2);
-                
+
                 // First child should be text
                 if let HtmlNode::Text(text) = &noscript_children[0] {
                     assert_eq!(text, "No JS!!");
                 } else {
                     panic!("Expected text node");
                 }
-                
+
                 // Second child should be style element
                 if let HtmlNode::Element { tag: style_tag, .. } = &noscript_children[1] {
                     assert_eq!(style_tag, "style");
@@ -383,9 +421,16 @@ mod tests {
     fn test_parse_void_element() {
         let html = r#"<input id="test" type="text">"#;
         let nodes = parse(html);
-        
+
         assert_eq!(nodes.len(), 1);
-        if let HtmlNode::Element { tag, attributes, is_void, children, .. } = &nodes[0] {
+        if let HtmlNode::Element {
+            tag,
+            attributes,
+            is_void,
+            children,
+            ..
+        } = &nodes[0]
+        {
             assert_eq!(tag, "input");
             assert_eq!(*is_void, true);
             assert_eq!(children.len(), 0);

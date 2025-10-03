@@ -4,10 +4,10 @@ use oxc_span::SourceType;
 
 fn main() {
     let source = r#"const x = <span> {greeting} {name} </span>;"#;
-    
+
     let allocator = Allocator::default();
     let ret = Parser::new(&allocator, source, SourceType::jsx()).parse();
-    
+
     // Find the JSX element
     use oxc_ast::Visit;
     struct Visitor;
@@ -32,7 +32,7 @@ fn main() {
             }
         }
     }
-    
+
     let mut visitor = Visitor;
     visitor.visit_program(&ret.program);
 }
