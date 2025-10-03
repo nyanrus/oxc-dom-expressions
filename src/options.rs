@@ -1,4 +1,35 @@
 //! Configuration options for the DOM expressions transformer
+//!
+//! This module defines the configuration options that control how JSX is transformed.
+//! The options closely mirror the babel-plugin-jsx-dom-expressions configuration
+//! to maintain compatibility.
+//!
+//! # Example
+//!
+//! ```rust
+//! use oxc_dom_expressions::{DomExpressionsOptions, GenerateMode};
+//!
+//! // Create options for DOM mode with event delegation
+//! let options = DomExpressionsOptions::new("solid-js/web")
+//!     .with_delegate_events(true)
+//!     .with_generate(GenerateMode::Dom);
+//!
+//! // Create options for SSR mode
+//! let ssr_options = DomExpressionsOptions::new("solid-js/web")
+//!     .with_generate(GenerateMode::Ssr)
+//!     .with_hydratable(true);
+//! ```
+//!
+//! # Key Options
+//!
+//! - **module_name**: Runtime module to import from (e.g., "solid-js/web", "r-dom")
+//! - **generate**: Output mode (Dom or Ssr)
+//! - **delegate_events**: Enable event delegation for better performance
+//! - **hydratable**: Generate hydration markers for SSR
+//! - **wrap_conditionals**: Wrap conditionals in functions for reactivity
+//! - **context_to_custom_elements**: Pass context to custom elements
+//! - **builtin_components**: Map of built-in component transformers
+//! - **effect_wrapper**: Custom effect wrapper function name
 
 use serde::{Deserialize, Serialize};
 

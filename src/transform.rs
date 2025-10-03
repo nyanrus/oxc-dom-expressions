@@ -1,4 +1,43 @@
 //! Main transformer for DOM expressions
+//!
+//! This module implements the core JSX to DOM transformation logic for oxc-dom-expressions.
+//! It transforms JSX syntax into optimized DOM manipulation code using a template-based approach.
+//!
+//! # Transformation Flow
+//!
+//! 1. **Parse**: JSX is parsed into an AST by the oxc parser
+//! 2. **Traverse**: The transformer traverses the AST bottom-up
+//! 3. **Template Building**: JSX elements are converted to HTML templates with dynamic slots
+//! 4. **Code Generation**: Generate runtime calls for dynamic content
+//! 5. **Output**: Emit optimized JavaScript with template literals and runtime library calls
+//!
+//! # Example
+//!
+//! Input JSX:
+//! ```jsx
+//! <div id="main">
+//!   <h1>{title}</h1>
+//! </div>
+//! ```
+//!
+//! Output:
+//! ```javascript
+//! import { template as _$template, insert as _$insert } from "r-dom";
+//! const _tmpl$ = /*#__PURE__*/ _$template(`<div id="main"><h1>`);
+//! (() => {
+//!   const _el$ = _tmpl$();
+//!   const _el$2 = _el$.firstChild;
+//!   _$insert(_el$2, title);
+//!   return _el$;
+//! })()
+//! ```
+//!
+//! # Key Components
+//!
+//! - **DomExpressions**: Main transformer struct implementing the Traverse trait
+//! - **Template**: Represents HTML template with dynamic slot positions
+//! - **DynamicSlot**: Marks positions where dynamic content should be inserted
+//! - **IIFE Generation**: Creates immediately-invoked function expressions for scoped element references
 
 use oxc_allocator::Vec as OxcVec;
 use oxc_allocator::{Allocator, Box};
