@@ -252,32 +252,52 @@ impl<'a> DomExpressions<'a> {
         // First declarator: var _el$ = _tmpl$()
         declarators.push(self.create_root_element_declarator(&root_var, template_var));
 
-        // Generate element references for each dynamic slot
-        let mut created_refs = std::collections::HashSet::new();
-
+        // Collect all paths (including intermediate paths) we need to create
+        let mut all_paths = std::collections::HashSet::new();
+        
         for slot in &template.dynamic_slots {
-            // Generate reference for slot path if needed
-            if !slot.path.is_empty() && !created_refs.contains(&slot.path) {
-                created_refs.insert(slot.path.clone());
-                let elem_var = self.generate_element_var();
-                path_to_var.insert(slot.path.clone(), elem_var.clone());
-                declarators
-                    .push(self.create_element_ref_declarator(&elem_var, &root_var, &slot.path));
-            }
-
-            // Generate reference for marker path if needed
-            if let Some(marker_path) = &slot.marker_path {
-                if !marker_path.is_empty() && !created_refs.contains(marker_path) {
-                    created_refs.insert(marker_path.clone());
-                    let elem_var = self.generate_element_var();
-                    path_to_var.insert(marker_path.clone(), elem_var.clone());
-                    declarators.push(self.create_element_ref_declarator(
-                        &elem_var,
-                        &root_var,
-                        marker_path,
-                    ));
+            // Add intermediate paths for slot path
+            if !slot.path.is_empty() {
+                for i in 1..=slot.path.len() {
+                    all_paths.insert(slot.path[..i].to_vec());
                 }
             }
+
+            // Add intermediate paths for marker path
+            if let Some(marker_path) = &slot.marker_path {
+                if !marker_path.is_empty() {
+                    for i in 1..=marker_path.len() {
+                        all_paths.insert(marker_path[..i].to_vec());
+                    }
+                }
+            }
+        }
+
+        // Sort paths by length to ensure we create parent references before children
+        let mut sorted_paths: Vec<_> = all_paths.into_iter().collect();
+        sorted_paths.sort_by_key(|path| path.len());
+
+        // Generate element references for each path
+        for path in sorted_paths {
+            let elem_var = self.generate_element_var();
+            path_to_var.insert(path.clone(), elem_var.clone());
+            
+            // For intermediate references, use the previous reference as base
+            let base_var = if path.len() == 1 {
+                &root_var
+            } else {
+                // Get the parent path and its variable
+                let parent_path = &path[..path.len() - 1];
+                path_to_var.get(parent_path).unwrap_or(&root_var)
+            };
+            
+            // Create reference from parent
+            let single_step_path = vec![path.last().unwrap().clone()];
+            declarators.push(self.create_element_ref_declarator(
+                &elem_var,
+                base_var,
+                &single_step_path,
+            ));
         }
 
         let var_decl = VariableDeclaration {

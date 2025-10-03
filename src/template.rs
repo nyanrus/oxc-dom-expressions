@@ -245,9 +245,7 @@ fn build_element_html(
                 has_previous_node = true;
             } else {
                 // We've had previous nodes, so this is a nextSibling
-                if let Some(last) = path.last_mut() {
-                    *last = "nextSibling".to_string();
-                }
+                path.push("nextSibling".to_string());
             }
 
             // Process the child - this may add markers or elements to HTML
