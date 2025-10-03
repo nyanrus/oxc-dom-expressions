@@ -414,9 +414,32 @@ impl<'a> DomExpressions<'a> {
                         expr_index += 1;
                     }
                 }
+                SlotType::Attribute(attr_name) => {
+                    // Generate setAttribute call wrapped in effect
+                    self.add_import("setAttribute");
+                    self.add_import("effect");
+
+                    if expr_index < expressions.len() {
+                        // Get element variable for this slot's path
+                        let element_var = if slot.path.is_empty() {
+                            root_var
+                        } else {
+                            path_to_var.get(&slot.path).map(|s| s.as_str()).unwrap_or(root_var)
+                        };
+
+                        if let Some(attr_stmt) = self.create_set_attribute_call(
+                            element_var,
+                            attr_name,
+                            &expressions[expr_index],
+                        ) {
+                            stmts.push(attr_stmt);
+                        }
+                        expr_index += 1;
+                    }
+                }
                 _ => {
                     // Other slot types not yet implemented
-                    // TODO: Implement attribute, event, ref, classList, style bindings
+                    // TODO: Implement event, ref, classList, style bindings
                 }
             }
         }
@@ -430,7 +453,37 @@ impl<'a> DomExpressions<'a> {
         jsx_elem: &JSXElement<'a>,
         expressions: &mut Vec<Expression<'a>>,
     ) {
-        // Walk through children and extract expressions
+        use oxc_allocator::CloneIn;
+
+        // First extract expressions from attributes
+        for attr in &jsx_elem.opening_element.attributes {
+            if let JSXAttributeItem::Attribute(attr) = attr {
+                if let Some(value) = &attr.value {
+                    match value {
+                        JSXAttributeValue::ExpressionContainer(container) => {
+                            match &container.expression {
+                                JSXExpression::StringLiteral(_)
+                                | JSXExpression::NumericLiteral(_)
+                                | JSXExpression::EmptyExpression(_) => {
+                                    // Static or empty - skip
+                                }
+                                expr => {
+                                    // Dynamic attribute expression
+                                    if let Some(expr_ref) = expr.as_expression() {
+                                        expressions.push(expr_ref.clone_in(self.allocator));
+                                    }
+                                }
+                            }
+                        }
+                        _ => {
+                            // Static attribute value - skip
+                        }
+                    }
+                }
+            }
+        }
+
+        // Then walk through children and extract expressions
         for child in &jsx_elem.children {
             self.extract_expressions_from_child(child, expressions);
         }
@@ -537,6 +590,131 @@ impl<'a> DomExpressions<'a> {
             ExpressionStatement {
                 span: SPAN,
                 expression: Expression::CallExpression(Box::new_in(call_expr, self.allocator)),
+            },
+            self.allocator,
+        )))
+    }
+
+    /// Create a setAttribute call wrapped in effect
+    fn create_set_attribute_call(
+        &self,
+        element_var: &str,
+        attr_name: &str,
+        value_expr: &Expression<'a>,
+    ) -> Option<Statement<'a>> {
+        use oxc_allocator::CloneIn;
+        use oxc_ast::ast::*;
+
+        // Create: _$effect(() => _$setAttribute(element, "attr", value))
+        
+        // Inner call: _$setAttribute(element, "attr", value)
+        let set_attr_fn = IdentifierReference {
+            span: SPAN,
+            name: Atom::from("_$setAttribute"),
+            reference_id: None.into(),
+        };
+
+        let mut set_attr_args = OxcVec::new_in(self.allocator);
+        
+        // First argument: element reference
+        set_attr_args.push(Argument::Identifier(Box::new_in(
+            IdentifierReference {
+                span: SPAN,
+                name: Atom::from(self.allocator.alloc_str(element_var)),
+                reference_id: None.into(),
+            },
+            self.allocator,
+        )));
+
+        // Second argument: attribute name as string literal
+        set_attr_args.push(Argument::StringLiteral(Box::new_in(
+            StringLiteral {
+                span: SPAN,
+                value: Atom::from(self.allocator.alloc_str(attr_name)),
+                raw: None,
+                lone_surrogates: false,
+            },
+            self.allocator,
+        )));
+
+        // Third argument: value expression
+        set_attr_args.push(Argument::from(value_expr.clone_in(self.allocator)));
+
+        let set_attr_call = CallExpression {
+            span: SPAN,
+            callee: Expression::Identifier(Box::new_in(set_attr_fn, self.allocator)),
+            arguments: set_attr_args,
+            optional: false,
+            type_arguments: None,
+            pure: false,
+        };
+
+        // Wrap in arrow function: () => _$setAttribute(...)
+        let arrow_body = FunctionBody {
+            span: SPAN,
+            directives: OxcVec::new_in(self.allocator),
+            statements: OxcVec::from_iter_in(
+                [Statement::ExpressionStatement(Box::new_in(
+                    ExpressionStatement {
+                        span: SPAN,
+                        expression: Expression::CallExpression(Box::new_in(
+                            set_attr_call,
+                            self.allocator,
+                        )),
+                    },
+                    self.allocator,
+                ))],
+                self.allocator,
+            ),
+        };
+
+        let arrow_fn = ArrowFunctionExpression {
+            span: SPAN,
+            expression: false,
+            r#async: false,
+            params: Box::new_in(
+                FormalParameters {
+                    span: SPAN,
+                    kind: FormalParameterKind::ArrowFormalParameters,
+                    items: OxcVec::new_in(self.allocator),
+                    rest: None,
+                },
+                self.allocator,
+            ),
+            body: Box::new_in(arrow_body, self.allocator),
+            type_parameters: None,
+            return_type: None,
+            scope_id: None.into(),
+            pure: false,
+            pife: false,
+        };
+
+        // Wrap in _$effect call
+        let effect_fn = IdentifierReference {
+            span: SPAN,
+            name: Atom::from("_$effect"),
+            reference_id: None.into(),
+        };
+
+        let mut effect_args = OxcVec::new_in(self.allocator);
+        effect_args.push(Argument::ArrowFunctionExpression(Box::new_in(
+            arrow_fn,
+            self.allocator,
+        )));
+
+        let effect_call = CallExpression {
+            span: SPAN,
+            callee: Expression::Identifier(Box::new_in(effect_fn, self.allocator)),
+            arguments: effect_args,
+            optional: false,
+            type_arguments: None,
+            pure: false,
+        };
+
+        Some(Statement::ExpressionStatement(Box::new_in(
+            ExpressionStatement {
+                span: SPAN,
+                expression: Expression::CallExpression(Box::new_in(effect_call, self.allocator)),
             },
             self.allocator,
         )))
