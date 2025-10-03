@@ -168,14 +168,8 @@ fn parse_node(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<HtmlNo
         let mut children = Vec::new();
         if !is_void && !self_closing {
             loop {
-                // Skip whitespace  
-                while let Some(&ch) = chars.peek() {
-                    if ch.is_whitespace() {
-                        chars.next();
-                    } else {
-                        break;
-                    }
-                }
+                // Don't skip whitespace - it should be preserved as text content
+                // The template.rs already handles formatting whitespace removal
                 
                 // Check for closing tag by looking ahead
                 if chars.peek() == Some(&'<') {
@@ -218,7 +212,7 @@ fn parse_node(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<HtmlNo
                         break;
                     }
                 } else if chars.peek().is_some() {
-                    // Parse text content
+                    // Parse text content (including whitespace)
                     let mut text = String::new();
                     while let Some(&ch) = chars.peek() {
                         if ch == '<' {
