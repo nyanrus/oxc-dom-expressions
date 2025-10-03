@@ -710,6 +710,371 @@ impl<'a> DomExpressions<'a> {
             )
         ))
     }
+    
+    /// Transform a component JSX element into a createComponent call
+    fn transform_component(&mut self, jsx_elem: Box<'a, JSXElement<'a>>) -> Expression<'a> {
+        use oxc_ast::ast::*;
+        
+        // Add the createComponent import
+        self.add_import("createComponent");
+        
+        // Get the component name
+        let component_name = match &jsx_elem.opening_element.name {
+            JSXElementName::Identifier(ident) => ident.name.clone(),
+            JSXElementName::IdentifierReference(ident) => ident.name.clone(),
+            _ => Atom::from("Unknown"),
+        };
+        
+        // Create the component identifier for the first argument
+        let component_ident = IdentifierReference {
+            span: SPAN,
+            name: component_name,
+            reference_id: None.into(),
+        };
+        
+        // Create arguments array
+        let mut arguments = OxcVec::new_in(self.allocator);
+        
+        // First argument: component identifier
+        arguments.push(Argument::from(Expression::Identifier(
+            Box::new_in(component_ident, self.allocator)
+        )));
+        
+        // Second argument: props object
+        let props_obj = self.create_component_props(&jsx_elem);
+        arguments.push(Argument::from(Expression::ObjectExpression(
+            Box::new_in(props_obj, self.allocator)
+        )));
+        
+        // Create the call expression: _$createComponent(Component, {...})
+        let callee_ident = IdentifierReference {
+            span: SPAN,
+            name: Atom::from("_$createComponent"),
+            reference_id: None.into(),
+        };
+        
+        let call_expr = CallExpression {
+            span: SPAN,
+            callee: Expression::Identifier(Box::new_in(callee_ident, self.allocator)),
+            arguments,
+            optional: false,
+            type_arguments: None,
+            pure: false,
+        };
+        
+        Expression::CallExpression(Box::new_in(call_expr, self.allocator))
+    }
+    
+    /// Create props object for a component
+    fn create_component_props(&self, jsx_elem: &JSXElement<'a>) -> ObjectExpression<'a> {
+        use oxc_ast::ast::*;
+        
+        let mut properties = OxcVec::new_in(self.allocator);
+        
+        // Add attributes as properties
+        for attr in &jsx_elem.opening_element.attributes {
+            if let JSXAttributeItem::Attribute(jsx_attr) = attr {
+                if let JSXAttributeName::Identifier(name_ident) = &jsx_attr.name {
+                    let prop_name = name_ident.name.clone();
+                    
+                    // Get the value
+                    let prop_value = if let Some(value) = &jsx_attr.value {
+                        match value {
+                            JSXAttributeValue::StringLiteral(str_lit) => {
+                                Expression::StringLiteral(Box::new_in(
+                                    StringLiteral {
+                                        span: SPAN,
+                                        value: str_lit.value.clone(),
+                                        raw: None.into(),
+                                        lone_surrogates: false,
+                                    },
+                                    self.allocator,
+                                ))
+                            }
+                            JSXAttributeValue::ExpressionContainer(expr_container) => {
+                                match &expr_container.expression {
+                                    jsx_expr if jsx_expr.is_expression() => {
+                                        // Clone the expression
+                                        self.clone_expression(jsx_expr.as_expression().unwrap())
+                                    }
+                                    _ => {
+                                        // For other cases, use true
+                                        Expression::BooleanLiteral(Box::new_in(
+                                            BooleanLiteral { span: SPAN, value: true },
+                                            self.allocator,
+                                        ))
+                                    }
+                                }
+                            }
+                            _ => {
+                                Expression::BooleanLiteral(Box::new_in(
+                                    BooleanLiteral { span: SPAN, value: true },
+                                    self.allocator,
+                                ))
+                            }
+                        }
+                    } else {
+                        Expression::BooleanLiteral(Box::new_in(
+                            BooleanLiteral { span: SPAN, value: true },
+                            self.allocator,
+                        ))
+                    };
+                    
+                    // Create property
+                    let prop_key = PropertyKey::StaticIdentifier(
+                        Box::new_in(
+                            IdentifierName {
+                                span: SPAN,
+                                name: prop_name,
+                            },
+                            self.allocator,
+                        )
+                    );
+                    
+                    properties.push(ObjectPropertyKind::ObjectProperty(
+                        Box::new_in(
+                            ObjectProperty {
+                                span: SPAN,
+                                kind: PropertyKind::Init,
+                                key: prop_key,
+                                value: prop_value,
+                                method: false,
+                                shorthand: false,
+                                computed: false,
+                            },
+                            self.allocator,
+                        )
+                    ));
+                }
+            }
+        }
+        
+        // Add children if present
+        if !jsx_elem.children.is_empty() {
+            let children_value = self.create_component_children(&jsx_elem.children);
+            
+            let prop_key = PropertyKey::StaticIdentifier(
+                Box::new_in(
+                    IdentifierName {
+                        span: SPAN,
+                        name: Atom::from("children"),
+                    },
+                    self.allocator,
+                )
+            );
+            
+            properties.push(ObjectPropertyKind::ObjectProperty(
+                Box::new_in(
+                    ObjectProperty {
+                        span: SPAN,
+                        kind: PropertyKind::Init,
+                        key: prop_key,
+                        value: children_value,
+                        method: false,
+                        shorthand: false,
+                        computed: false,
+                    },
+                    self.allocator,
+                )
+            ));
+        }
+        
+        ObjectExpression {
+            span: SPAN,
+            properties,
+        }
+    }
+    
+    /// Create children value for a component (can be a single value or array)
+    fn create_component_children(&self, children: &OxcVec<'a, JSXChild<'a>>) -> Expression<'a> {
+        use oxc_ast::ast::*;
+        
+        // Filter out whitespace-only text nodes
+        let significant_children: Vec<_> = children.iter().filter(|child| {
+            match child {
+                JSXChild::Text(text) => !text.value.trim().is_empty(),
+                _ => true,
+            }
+        }).collect();
+        
+        if significant_children.len() == 1 {
+            // Single child - return it directly
+            self.jsx_child_to_expression(significant_children[0])
+        } else {
+            // Multiple children - return as array
+            let mut elements = OxcVec::new_in(self.allocator);
+            for child in significant_children {
+                let expr = self.jsx_child_to_expression(child);
+                elements.push(ArrayExpressionElement::from(expr));
+            }
+            Expression::ArrayExpression(Box::new_in(
+                ArrayExpression {
+                    span: SPAN,
+                    elements,
+                },
+                self.allocator,
+            ))
+        }
+    }
+    
+    /// Convert a JSX child to an expression
+    fn jsx_child_to_expression(&self, child: &JSXChild<'a>) -> Expression<'a> {
+        use oxc_ast::ast::*;
+        
+        match child {
+            JSXChild::Text(text) => {
+                Expression::StringLiteral(Box::new_in(
+                    StringLiteral {
+                        span: SPAN,
+                        value: text.value.clone(),
+                        raw: None.into(),
+                        lone_surrogates: false,
+                    },
+                    self.allocator,
+                ))
+            }
+            JSXChild::ExpressionContainer(expr_container) => {
+                match &expr_container.expression {
+                    jsx_expr if jsx_expr.is_expression() => {
+                        self.clone_expression(jsx_expr.as_expression().unwrap())
+                    }
+                    _ => {
+                        Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator))
+                    }
+                }
+            }
+            _ => {
+                // For other types, return null for now
+                Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator))
+            }
+        }
+    }
+    
+    /// Transform a JSX fragment into an array or string
+    fn transform_fragment(&self, jsx_frag: Box<'a, JSXFragment<'a>>) -> Expression<'a> {
+        use oxc_ast::ast::*;
+        
+        // Filter out whitespace-only text nodes
+        let significant_children: Vec<_> = jsx_frag.children.iter().filter(|child| {
+            match child {
+                JSXChild::Text(text) => !text.value.trim().is_empty(),
+                _ => true,
+            }
+        }).collect();
+        
+        if significant_children.len() == 1 {
+            // Single child - return it directly
+            self.jsx_child_to_expression(significant_children[0])
+        } else {
+            // Multiple children - return as array
+            let mut elements = OxcVec::new_in(self.allocator);
+            for child in significant_children {
+                let expr = self.jsx_child_to_expression(child);
+                elements.push(ArrayExpressionElement::from(expr));
+            }
+            Expression::ArrayExpression(Box::new_in(
+                ArrayExpression {
+                    span: SPAN,
+                    elements,
+                },
+                self.allocator,
+            ))
+        }
+    }
+    
+    /// Clone an expression (deep copy)
+    fn clone_expression(&self, expr: &Expression<'a>) -> Expression<'a> {
+        use oxc_ast::ast::*;
+        
+        match expr {
+            Expression::Identifier(ident) => {
+                Expression::Identifier(Box::new_in(
+                    IdentifierReference {
+                        span: SPAN,
+                        name: ident.name.clone(),
+                        reference_id: None.into(),
+                    },
+                    self.allocator,
+                ))
+            }
+            Expression::StringLiteral(str_lit) => {
+                Expression::StringLiteral(Box::new_in(
+                    StringLiteral {
+                        span: SPAN,
+                        value: str_lit.value.clone(),
+                        raw: None.into(),
+                        lone_surrogates: false,
+                    },
+                    self.allocator,
+                ))
+            }
+            Expression::BooleanLiteral(bool_lit) => {
+                Expression::BooleanLiteral(Box::new_in(
+                    BooleanLiteral {
+                        span: SPAN,
+                        value: bool_lit.value,
+                    },
+                    self.allocator,
+                ))
+            }
+            Expression::NumericLiteral(num_lit) => {
+                Expression::NumericLiteral(Box::new_in(
+                    NumericLiteral {
+                        span: SPAN,
+                        value: num_lit.value,
+                        raw: num_lit.raw.clone(),
+                        base: num_lit.base,
+                    },
+                    self.allocator,
+                ))
+            }
+            Expression::StaticMemberExpression(static_member) => {
+                let object = self.clone_expression(&static_member.object);
+                Expression::StaticMemberExpression(Box::new_in(
+                    StaticMemberExpression {
+                        span: SPAN,
+                        object,
+                        property: IdentifierName {
+                            span: SPAN,
+                            name: static_member.property.name.clone(),
+                        },
+                        optional: static_member.optional,
+                    },
+                    self.allocator,
+                ))
+            }
+            Expression::ComputedMemberExpression(computed_member) => {
+                let object = self.clone_expression(&computed_member.object);
+                let expression = self.clone_expression(&computed_member.expression);
+                Expression::ComputedMemberExpression(Box::new_in(
+                    ComputedMemberExpression {
+                        span: SPAN,
+                        object,
+                        expression,
+                        optional: computed_member.optional,
+                    },
+                    self.allocator,
+                ))
+            }
+            Expression::BinaryExpression(bin_expr) => {
+                let left = self.clone_expression(&bin_expr.left);
+                let right = self.clone_expression(&bin_expr.right);
+                Expression::BinaryExpression(Box::new_in(
+                    BinaryExpression {
+                        span: SPAN,
+                        left,
+                        operator: bin_expr.operator,
+                        right,
+                    },
+                    self.allocator,
+                ))
+            }
+            _ => {
+                // For other expression types, return a null literal for now
+                Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator))
+            }
+        }
+    }
 }
 
 impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
@@ -890,20 +1255,24 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
     }
 
     fn exit_expression(&mut self, expr: &mut Expression<'a>, _ctx: &mut TraverseCtx<'a, ()>) {
-        // Replace JSX elements with template calls or IIFEs
-        // We need to use mem::replace to avoid borrow checker issues
+        // Replace JSX elements and fragments with appropriate calls
         use std::mem;
         use oxc_ast::ast::*;
         
-        // First check if this is a JSX element
-        let is_jsx_elem = matches!(expr, Expression::JSXElement(_));
-        if !is_jsx_elem {
-            // Check for fragments
-            if matches!(expr, Expression::JSXFragment(_)) {
-                // Handle fragments
-                // For now, just leave them as-is
-                // In a full implementation, fragments would be converted to arrays
+        // Handle fragments first
+        if matches!(expr, Expression::JSXFragment(_)) {
+            let placeholder = Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator));
+            let jsx_expr = mem::replace(expr, placeholder);
+            
+            if let Expression::JSXFragment(jsx_frag) = jsx_expr {
+                let transformed = self.transform_fragment(jsx_frag);
+                *expr = transformed;
             }
+            return;
+        }
+        
+        // Check if this is a JSX element
+        if !matches!(expr, Expression::JSXElement(_)) {
             return;
         }
         
@@ -925,8 +1294,9 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
             };
 
             if is_component(tag_name) {
-                // Don't transform components - restore the expression
-                *expr = Expression::JSXElement(jsx_elem);
+                // Transform component
+                let component_call = self.transform_component(jsx_elem);
+                *expr = component_call;
                 return;
             }
 
