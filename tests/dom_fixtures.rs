@@ -316,3 +316,53 @@ fn test_namespace_elements() {
         }
     }
 }
+
+#[test]
+fn test_template_debug() {
+    use oxc_allocator::Allocator;
+    use oxc_parser::Parser;
+    use oxc_span::SourceType;
+    use oxc_dom_expressions::template::build_template;
+    use oxc_ast::ast::*;
+    
+    let source = r#"<span>Hello {name}</span>"#;
+    let allocator = Allocator::default();
+    let ret = Parser::new(&allocator, source, SourceType::jsx()).parse();
+    
+    if let Some(Statement::ExpressionStatement(expr_stmt)) = ret.program.body.first() {
+        if let Expression::JSXElement(jsx_elem) = &expr_stmt.expression {
+            let template = build_template(jsx_elem);
+            println!("Template HTML: '{}'", template.html);
+            println!("Dynamic slots: {}", template.dynamic_slots.len());
+            for (i, slot) in template.dynamic_slots.iter().enumerate() {
+                println!("  Slot {}: {:?} at path {:?}", i, slot.slot_type, slot.path);
+            }
+        }
+    }
+}
+
+#[test]
+fn test_template_with_options() {
+    use oxc_allocator::Allocator;
+    use oxc_parser::Parser;
+    use oxc_span::SourceType;
+    use oxc_dom_expressions::template::build_template_with_options;
+    use oxc_dom_expressions::DomExpressionsOptions;
+    use oxc_ast::ast::*;
+    
+    let source = r#"<span>Hello {name}</span>"#;
+    let allocator = Allocator::default();
+    let ret = Parser::new(&allocator, source, SourceType::jsx()).parse();
+    
+    let options = DomExpressionsOptions::new("r-dom")
+        .with_delegate_events(true)
+        .with_generate(oxc_dom_expressions::GenerateMode::Dom);
+    
+    if let Some(Statement::ExpressionStatement(expr_stmt)) = ret.program.body.first() {
+        if let Expression::JSXElement(jsx_elem) = &expr_stmt.expression {
+            let template = build_template_with_options(jsx_elem, Some(&options));
+            println!("Minimalized template HTML: '{}'", template.html);
+            println!("Dynamic slots: {}", template.dynamic_slots.len());
+        }
+    }
+}
