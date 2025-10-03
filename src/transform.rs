@@ -475,15 +475,6 @@ impl<'a> DomExpressions<'a> {
         }
     }
 
-    /// Create an insert call statement
-    fn create_insert_call(
-        &self,
-        element_var: &str,
-        expr: &Expression<'a>,
-    ) -> Option<Statement<'a>> {
-        self.create_insert_call_with_marker(element_var, expr, None)
-    }
-
     /// Create an insert call statement with optional marker
     fn create_insert_call_with_marker(
         &self,
@@ -571,12 +562,6 @@ impl<'a> DomExpressions<'a> {
             },
             self.allocator,
         ))
-    }
-
-    /// Create import statement for runtime functions
-    fn create_import_statement(&self) -> Option<Statement<'a>> {
-        // This function is no longer used - we create multiple import statements instead
-        None
     }
 
     /// Create multiple import statements (one per import)
