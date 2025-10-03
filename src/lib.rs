@@ -6,15 +6,15 @@
 
 pub mod codegen;
 pub mod html_subset_parser;
-mod options;
 pub mod optimizer;
+mod options;
 pub mod template;
 pub mod template_minimalizer;
 mod transform;
 pub mod utils;
 
-pub use options::{DomExpressionsOptions, GenerateMode};
 pub use optimizer::{Optimization, OptimizationKind, TemplateOptimizer, TemplateStats};
+pub use options::{DomExpressionsOptions, GenerateMode};
 pub use transform::DomExpressions;
 
 #[cfg(test)]

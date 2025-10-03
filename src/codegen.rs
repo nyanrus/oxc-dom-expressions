@@ -6,22 +6,16 @@ use crate::options::DomExpressionsOptions;
 use crate::template::{SlotType, Template};
 
 /// Generate the cloning code for a template
-pub fn generate_clone_code(
-    template_var: &str,
-    element_var: &str,
-) -> String {
+pub fn generate_clone_code(template_var: &str, element_var: &str) -> String {
     format!("const {} = {}$.cloneNode(true)", element_var, template_var)
 }
 
 /// Generate element reference code based on path
-pub fn generate_element_ref(
-    base_var: &str,
-    path: &[String],
-) -> String {
+pub fn generate_element_ref(base_var: &str, path: &[String]) -> String {
     if path.is_empty() {
         return base_var.to_string();
     }
-    
+
     let mut result = base_var.to_string();
     for segment in path {
         result.push('.');
@@ -52,17 +46,12 @@ pub fn generate_set_attribute_code(
         if attr_name == "class" || attr_name == "className" {
             format!(
                 "{}(() => className({}, {}))",
-                options.effect_wrapper,
-                element_ref,
-                value
+                options.effect_wrapper, element_ref, value
             )
         } else {
             format!(
                 "{}(() => setAttribute({}, \"{}\", {}))",
-                options.effect_wrapper,
-                element_ref,
-                attr_name,
-                value
+                options.effect_wrapper, element_ref, attr_name, value
             )
         }
     } else {
@@ -81,8 +70,7 @@ pub fn generate_event_handler_code(
     if delegate {
         // Use delegation
         let delegated_name = event_name.to_lowercase();
-        format!("{}.$$click = {}", element_ref, handler)
-            .replace("click", &delegated_name)
+        format!("{}.$$click = {}", element_ref, handler).replace("click", &delegated_name)
     } else {
         // Direct addEventListener
         format!(
@@ -130,9 +118,7 @@ pub fn generate_style_code(
 pub fn generate_on_event_code(element_ref: &str, event_name: &str, handler: &str) -> String {
     format!(
         "{}.addEventListener(\"{}\", {})",
-        element_ref,
-        event_name,
-        handler
+        element_ref, event_name, handler
     )
 }
 
@@ -140,9 +126,7 @@ pub fn generate_on_event_code(element_ref: &str, event_name: &str, handler: &str
 pub fn generate_on_capture_code(element_ref: &str, event_name: &str, handler: &str) -> String {
     format!(
         "{}.addEventListener(\"{}\", {}, {{ capture: true }})",
-        element_ref,
-        event_name,
-        handler
+        element_ref, event_name, handler
     )
 }
 
@@ -153,13 +137,13 @@ pub fn generate_template_transformation(
     options: &DomExpressionsOptions,
 ) -> String {
     let mut code = String::new();
-    
+
     // Create IIFE
     code.push_str("(() => {\n");
-    
+
     // Clone the template
     let _ = writeln!(code, "  const _el$ = {}$.cloneNode(true);", template_var);
-    
+
     // Generate element references
     let mut element_refs = vec![("_el$".to_string(), Vec::<String>::new())];
     for (i, slot) in template.dynamic_slots.iter().enumerate() {
@@ -170,7 +154,7 @@ pub fn generate_template_transformation(
             element_refs.push((ref_var, slot.path.clone()));
         }
     }
-    
+
     // Generate dynamic operations
     for (i, slot) in template.dynamic_slots.iter().enumerate() {
         let element_ref = if slot.path.is_empty() {
@@ -178,30 +162,20 @@ pub fn generate_template_transformation(
         } else {
             &format!("_el${}", i + 2)
         };
-        
+
         match &slot.slot_type {
             SlotType::TextContent => {
-                let _ = writeln!(
-                    code,
-                    "  insert({}, {{/* expression */}});",
-                    element_ref
-                );
+                let _ = writeln!(code, "  insert({}, {{/* expression */}});", element_ref);
             }
             SlotType::Attribute(name) => {
                 let _ = writeln!(
                     code,
                     "  {}(() => setAttribute({}, \"{}\", {{/* value */}}));",
-                    options.effect_wrapper,
-                    element_ref,
-                    name
+                    options.effect_wrapper, element_ref, name
                 );
             }
             SlotType::EventHandler(_name) => {
-                let _ = writeln!(
-                    code,
-                    "  {}.$$click = {{/* handler */}};",
-                    element_ref
-                );
+                let _ = writeln!(code, "  {}.$$click = {{/* handler */}};", element_ref);
             }
             SlotType::Ref => {
                 let _ = writeln!(
@@ -215,41 +189,37 @@ pub fn generate_template_transformation(
                 let _ = writeln!(
                     code,
                     "  {}(() => classList({}, {{/* classList */}}));",
-                    options.effect_wrapper,
-                    element_ref
+                    options.effect_wrapper, element_ref
                 );
             }
             SlotType::StyleObject => {
                 let _ = writeln!(
                     code,
                     "  {}(() => style({}, {{/* style */}}));",
-                    options.effect_wrapper,
-                    element_ref
+                    options.effect_wrapper, element_ref
                 );
             }
             SlotType::OnEvent(event_name) => {
                 let _ = writeln!(
                     code,
                     "  {}.addEventListener(\"{}\", {{/* handler */}});",
-                    element_ref,
-                    event_name
+                    element_ref, event_name
                 );
             }
             SlotType::OnCaptureEvent(event_name) => {
                 let _ = writeln!(
                     code,
                     "  {}.addEventListener(\"{}\", {{/* handler */}}, {{ capture: true }});",
-                    element_ref,
-                    event_name
+                    element_ref, event_name
                 );
             }
         }
     }
-    
+
     // Return the element
     code.push_str("  return _el$;\n");
     code.push_str("})()");
-    
+
     code
 }
 
@@ -271,7 +241,10 @@ mod tests {
             "_el$.firstChild"
         );
         assert_eq!(
-            generate_element_ref("_el$", &["firstChild".to_string(), "nextSibling".to_string()]),
+            generate_element_ref(
+                "_el$",
+                &["firstChild".to_string(), "nextSibling".to_string()]
+            ),
             "_el$.firstChild.nextSibling"
         );
     }

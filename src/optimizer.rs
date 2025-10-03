@@ -30,7 +30,8 @@ impl TemplateStats {
 
     /// Calculate space saved by deduplication
     pub fn space_saved(&self) -> usize {
-        self.total_html_size.saturating_sub(self.deduplicated_html_size)
+        self.total_html_size
+            .saturating_sub(self.deduplicated_html_size)
     }
 
     /// Calculate deduplication ratio (0.0 to 1.0)
@@ -78,20 +79,20 @@ impl TemplateOptimizer {
     /// Get statistics about template usage
     pub fn get_stats(&self) -> TemplateStats {
         let mut stats = TemplateStats::new();
-        
+
         stats.unique_templates = self.templates.len();
         stats.total_templates = self.template_usage.values().sum();
         stats.reused_templates = stats.total_templates.saturating_sub(stats.unique_templates);
-        
+
         for (html, template) in &self.templates {
             let usage_count = self.template_usage.get(html).unwrap_or(&0);
-            
+
             // Count total size (if this template was not deduplicated)
             stats.total_html_size += html.len() * usage_count;
-            
+
             // Count deduplicated size (template only stored once)
             stats.deduplicated_html_size += html.len();
-            
+
             // Count static vs dynamic
             if template.dynamic_slots.is_empty() {
                 stats.static_templates += 1;
@@ -99,7 +100,7 @@ impl TemplateOptimizer {
                 stats.dynamic_templates += 1;
             }
         }
-        
+
         stats
     }
 
@@ -115,7 +116,7 @@ impl TemplateOptimizer {
     /// Find optimization opportunities
     pub fn find_optimizations(&self) -> Vec<Optimization> {
         let mut optimizations = Vec::new();
-        
+
         // Check for large templates that could be split
         for (html, template) in &self.templates {
             if html.len() > 1000 && template.dynamic_slots.len() > 5 {
@@ -130,7 +131,7 @@ impl TemplateOptimizer {
                 });
             }
         }
-        
+
         // Check for templates with many dynamic slots
         for (html, template) in &self.templates {
             if template.dynamic_slots.len() > 10 {
@@ -144,7 +145,7 @@ impl TemplateOptimizer {
                 });
             }
         }
-        
+
         optimizations
     }
 }
@@ -201,7 +202,7 @@ mod tests {
             static_templates: 2,
             dynamic_templates: 3,
         };
-        
+
         assert_eq!(stats.space_saved(), 500);
         assert_eq!(stats.deduplication_ratio(), 0.5);
         assert_eq!(stats.average_template_size(), 100.0);
@@ -210,20 +211,20 @@ mod tests {
     #[test]
     fn test_optimizer_record_template() {
         let mut optimizer = TemplateOptimizer::new();
-        
+
         let template1 = Template {
             html: "<div>Hello</div>".to_string(),
             dynamic_slots: vec![],
         };
-        
+
         let template2 = Template {
             html: "<div>Hello</div>".to_string(),
             dynamic_slots: vec![],
         };
-        
+
         optimizer.record_template(template1);
         optimizer.record_template(template2);
-        
+
         let stats = optimizer.get_stats();
         assert_eq!(stats.total_templates, 2);
         assert_eq!(stats.unique_templates, 1);
@@ -233,23 +234,24 @@ mod tests {
     #[test]
     fn test_optimizer_static_vs_dynamic() {
         let mut optimizer = TemplateOptimizer::new();
-        
+
         let static_template = Template {
             html: "<div>Static</div>".to_string(),
             dynamic_slots: vec![],
         };
-        
+
         let dynamic_template = Template {
             html: "<div>Dynamic</div>".to_string(),
             dynamic_slots: vec![DynamicSlot {
                 path: vec![],
                 slot_type: SlotType::TextContent,
+                marker_path: None,
             }],
         };
-        
+
         optimizer.record_template(static_template);
         optimizer.record_template(dynamic_template);
-        
+
         let stats = optimizer.get_stats();
         assert_eq!(stats.static_templates, 1);
         assert_eq!(stats.dynamic_templates, 1);
@@ -258,7 +260,7 @@ mod tests {
     #[test]
     fn test_optimizer_find_large_templates() {
         let mut optimizer = TemplateOptimizer::new();
-        
+
         let large_html = "x".repeat(1500);
         let large_template = Template {
             html: large_html,
@@ -266,12 +268,13 @@ mod tests {
                 .map(|_| DynamicSlot {
                     path: vec![],
                     slot_type: SlotType::TextContent,
+                    marker_path: None,
                 })
                 .collect(),
         };
-        
+
         optimizer.record_template(large_template);
-        
+
         let optimizations = optimizer.find_optimizations();
         assert_eq!(optimizations.len(), 1);
         assert_eq!(optimizations[0].kind, OptimizationKind::LargeTemplate);
@@ -280,19 +283,20 @@ mod tests {
     #[test]
     fn test_optimizer_find_many_slots() {
         let mut optimizer = TemplateOptimizer::new();
-        
+
         let template = Template {
             html: "<div>Many slots</div>".to_string(),
             dynamic_slots: (0..15)
                 .map(|_| DynamicSlot {
                     path: vec![],
                     slot_type: SlotType::TextContent,
+                    marker_path: None,
                 })
                 .collect(),
         };
-        
+
         optimizer.record_template(template);
-        
+
         let optimizations = optimizer.find_optimizations();
         assert_eq!(optimizations.len(), 1);
         assert_eq!(optimizations[0].kind, OptimizationKind::ManyDynamicSlots);

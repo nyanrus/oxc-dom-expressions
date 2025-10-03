@@ -1,13 +1,13 @@
 //! Phase 2 demonstration example
-//! 
+//!
 //! This example demonstrates the core transformation functionality implemented in Phase 2.
 
 use oxc_allocator::Allocator;
 use oxc_dom_expressions::{DomExpressions, DomExpressionsOptions};
 use oxc_parser::Parser;
+use oxc_semantic::SemanticBuilder;
 use oxc_span::SourceType;
 use oxc_traverse::traverse_mut;
-use oxc_semantic::SemanticBuilder;
 
 fn main() {
     println!("=== Phase 2: Core Transformation Demo ===\n");
@@ -16,30 +16,32 @@ fn main() {
     println!("Example 1: Simple Static Element");
     println!("Input:  <div class=\"container\">Hello World</div>");
     demonstrate_transformation(r#"const view = <div class="container">Hello World</div>;"#);
-    
+
     println!("\n---\n");
-    
+
     // Example 2: Dynamic content
     println!("Example 2: Dynamic Content");
     println!("Input:  <div>{{count()}}</div>");
     demonstrate_transformation(r#"const view = <div>{count()}</div>;"#);
-    
+
     println!("\n---\n");
-    
+
     // Example 3: Nested elements
     println!("Example 3: Nested Elements");
     println!("Input:  <div><h1>Title</h1><p>Content</p></div>");
     demonstrate_transformation(r#"const view = <div><h1>Title</h1><p>Content</p></div>;"#);
-    
+
     println!("\n---\n");
-    
+
     // Example 4: Multiple JSX expressions
     println!("Example 4: Multiple JSX Expressions");
-    demonstrate_transformation(r#"
+    demonstrate_transformation(
+        r#"
         const view1 = <div>First</div>;
         const view2 = <span>Second</span>;
-    "#);
-    
+    "#,
+    );
+
     println!("\n=== Phase 2 Features Demonstrated ===");
     println!("✅ Template string generation from JSX elements");
     println!("✅ Static content extraction");
@@ -53,22 +55,23 @@ fn demonstrate_transformation(source: &str) {
     let allocator = Allocator::default();
     let ret = Parser::new(&allocator, source, SourceType::jsx()).parse();
     let mut program = ret.program;
-    
-    let semantic = SemanticBuilder::new()
-        .build(&program)
-        .semantic;
+
+    let semantic = SemanticBuilder::new().build(&program).semantic;
     let scoping = semantic.into_scoping();
-    
+
     let options = DomExpressionsOptions::default();
     let mut transformer = DomExpressions::new(&allocator, options);
-    
+
     println!("Before transformation:");
     println!("  Module: {}", transformer.options().module_name);
     println!("  Effect wrapper: {}", transformer.options().effect_wrapper);
-    println!("  Delegate events: {}", transformer.options().delegate_events);
-    
+    println!(
+        "  Delegate events: {}",
+        transformer.options().delegate_events
+    );
+
     traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
-    
+
     println!("\nAfter transformation:");
     println!("  ✓ JSX elements processed");
     println!("  ✓ Templates collected");

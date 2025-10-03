@@ -1,10 +1,10 @@
 //! Main transformer for DOM expressions
 
-use oxc_allocator::{Allocator, Box};
 use oxc_allocator::Vec as OxcVec;
+use oxc_allocator::{Allocator, Box};
 use oxc_ast::ast::*;
+use oxc_span::{Atom, SPAN};
 use oxc_traverse::{Traverse, TraverseCtx};
-use oxc_span::{SPAN, Atom};
 use std::collections::{HashMap, HashSet};
 
 use crate::optimizer::{TemplateOptimizer, TemplateStats};
@@ -104,7 +104,7 @@ impl<'a> DomExpressions<'a> {
             reference_id: None.into(),
         };
         let callee = Expression::Identifier(Box::new_in(callee_ident, self.allocator));
-        
+
         let call_expr = CallExpression {
             span: SPAN,
             arguments: OxcVec::new_in(self.allocator),
@@ -113,7 +113,7 @@ impl<'a> DomExpressions<'a> {
             type_arguments: None,
             pure: false,
         };
-        
+
         Box::new_in(call_expr, self.allocator)
     }
 
@@ -125,31 +125,37 @@ impl<'a> DomExpressions<'a> {
         template_var: &str,
     ) -> Box<'a, CallExpression<'a>> {
         use oxc_ast::ast::*;
-        
+
         // Generate IIFE: (() => { ... })()
         // 1. Create statements for the function body
         let mut body_stmts = OxcVec::new_in(self.allocator);
-        
+
         // 2. Create template cloning statement and element references
         // var _el$ = _tmpl$(), _el$2 = _el$.firstChild, ...
-        let (root_var, elem_decls, path_to_var) = self.create_element_declarations(template, template_var);
+        let (root_var, elem_decls, path_to_var) =
+            self.create_element_declarations(template, template_var);
         body_stmts.push(elem_decls);
-        
+
         // 3. Create runtime calls for dynamic content
-        let runtime_stmts = self.create_runtime_calls_from_expressions(&expressions, template, &root_var, &path_to_var);
+        let runtime_stmts = self.create_runtime_calls_from_expressions(
+            &expressions,
+            template,
+            &root_var,
+            &path_to_var,
+        );
         body_stmts.extend(runtime_stmts);
-        
+
         // 4. Create return statement
         let return_stmt = self.create_return_statement(&root_var);
         body_stmts.push(return_stmt);
-        
+
         // Create function body
         let func_body = FunctionBody {
             span: SPAN,
             directives: OxcVec::new_in(self.allocator),
             statements: body_stmts,
         };
-        
+
         // Create arrow function
         let arrow_fn = ArrowFunctionExpression {
             span: SPAN,
@@ -171,19 +177,17 @@ impl<'a> DomExpressions<'a> {
             pure: false,
             pife: false,
         };
-        
+
         // Create call expression: (() => { ... })()
         let call_expr = CallExpression {
             span: SPAN,
-            callee: Expression::ArrowFunctionExpression(
-                Box::new_in(arrow_fn, self.allocator)
-            ),
+            callee: Expression::ArrowFunctionExpression(Box::new_in(arrow_fn, self.allocator)),
             arguments: OxcVec::new_in(self.allocator),
             optional: false,
             type_arguments: None,
             pure: false,
         };
-        
+
         Box::new_in(call_expr, self.allocator)
     }
 
@@ -193,35 +197,37 @@ impl<'a> DomExpressions<'a> {
         &mut self,
         template: &Template,
         template_var: &str,
-    ) -> (String, Statement<'a>, std::collections::HashMap<Vec<String>, String>) {
+    ) -> (
+        String,
+        Statement<'a>,
+        std::collections::HashMap<Vec<String>, String>,
+    ) {
         use oxc_ast::ast::*;
-        
+
         // Generate unique variable names
         let root_var = self.generate_element_var();
         let mut path_to_var = std::collections::HashMap::new();
-        
+
         // Create declarators
         let mut declarators = OxcVec::new_in(self.allocator);
-        
+
         // First declarator: var _el$ = _tmpl$()
         let root_id = BindingPattern {
-            kind: BindingPatternKind::BindingIdentifier(
-                Box::new_in(
-                    BindingIdentifier {
-                        span: SPAN,
-                        name: Atom::from(self.allocator.alloc_str(&root_var)),
-                        symbol_id: None.into(),
-                    },
-                    self.allocator,
-                )
-            ),
+            kind: BindingPatternKind::BindingIdentifier(Box::new_in(
+                BindingIdentifier {
+                    span: SPAN,
+                    name: Atom::from(self.allocator.alloc_str(&root_var)),
+                    symbol_id: None.into(),
+                },
+                self.allocator,
+            )),
             type_annotation: None,
             optional: false,
         };
-        
+
         // Create call to template function
         let template_call = self.create_template_call(self.allocator.alloc_str(template_var));
-        
+
         declarators.push(VariableDeclarator {
             span: SPAN,
             kind: VariableDeclarationKind::Var,
@@ -229,48 +235,97 @@ impl<'a> DomExpressions<'a> {
             init: Some(Expression::CallExpression(template_call)),
             definite: false,
         });
-        
+
         // Generate element references for each dynamic slot
         // Track which paths we've already created references for
         let mut created_refs = std::collections::HashSet::new();
-        
+
         for slot in &template.dynamic_slots {
             // Generate reference for slot path if needed
             if !slot.path.is_empty() && !created_refs.contains(&slot.path) {
                 created_refs.insert(slot.path.clone());
-                
+
                 let elem_var = self.generate_element_var();
                 path_to_var.insert(slot.path.clone(), elem_var.clone());
                 let elem_id = BindingPattern {
-                    kind: BindingPatternKind::BindingIdentifier(
-                        Box::new_in(
+                    kind: BindingPatternKind::BindingIdentifier(Box::new_in(
+                        BindingIdentifier {
+                            span: SPAN,
+                            name: Atom::from(self.allocator.alloc_str(&elem_var)),
+                            symbol_id: None.into(),
+                        },
+                        self.allocator,
+                    )),
+                    type_annotation: None,
+                    optional: false,
+                };
+
+                // Build path expression: _el$.firstChild.nextSibling...
+                let mut expr = Expression::Identifier(Box::new_in(
+                    IdentifierReference {
+                        span: SPAN,
+                        name: Atom::from(self.allocator.alloc_str(&root_var)),
+                        reference_id: None.into(),
+                    },
+                    self.allocator,
+                ));
+
+                for segment in &slot.path {
+                    expr = Expression::StaticMemberExpression(Box::new_in(
+                        StaticMemberExpression {
+                            span: SPAN,
+                            object: expr,
+                            property: IdentifierName {
+                                span: SPAN,
+                                name: Atom::from(self.allocator.alloc_str(segment)),
+                            },
+                            optional: false,
+                        },
+                        self.allocator,
+                    ));
+                }
+
+                declarators.push(VariableDeclarator {
+                    span: SPAN,
+                    kind: VariableDeclarationKind::Var,
+                    id: elem_id,
+                    init: Some(expr),
+                    definite: false,
+                });
+            }
+
+            // Generate reference for marker path if needed
+            if let Some(marker_path) = &slot.marker_path {
+                if !marker_path.is_empty() && !created_refs.contains(marker_path) {
+                    created_refs.insert(marker_path.clone());
+
+                    let elem_var = self.generate_element_var();
+                    path_to_var.insert(marker_path.clone(), elem_var.clone());
+                    let elem_id = BindingPattern {
+                        kind: BindingPatternKind::BindingIdentifier(Box::new_in(
                             BindingIdentifier {
                                 span: SPAN,
                                 name: Atom::from(self.allocator.alloc_str(&elem_var)),
                                 symbol_id: None.into(),
                             },
                             self.allocator,
-                        )
-                    ),
-                    type_annotation: None,
-                    optional: false,
-                };
-                
-                // Build path expression: _el$.firstChild.nextSibling...
-                let mut expr = Expression::Identifier(
-                    Box::new_in(
+                        )),
+                        type_annotation: None,
+                        optional: false,
+                    };
+
+                    // Build path expression: _el$.firstChild.nextSibling...
+                    let mut expr = Expression::Identifier(Box::new_in(
                         IdentifierReference {
                             span: SPAN,
                             name: Atom::from(self.allocator.alloc_str(&root_var)),
                             reference_id: None.into(),
                         },
                         self.allocator,
-                    )
-                );
-                
-                for segment in &slot.path {
-                    expr = Expression::StaticMemberExpression(
-                        Box::new_in(
+                    ));
+
+                    for segment in marker_path {
+                        expr = Expression::StaticMemberExpression(Box::new_in(
                             StaticMemberExpression {
                                 span: SPAN,
                                 object: expr,
@@ -281,70 +336,9 @@ impl<'a> DomExpressions<'a> {
                                 optional: false,
                             },
                             self.allocator,
-                        )
-                    );
-                }
-                
-                declarators.push(VariableDeclarator {
-                    span: SPAN,
-                    kind: VariableDeclarationKind::Var,
-                    id: elem_id,
-                    init: Some(expr),
-                    definite: false,
-                });
-            }
-            
-            // Generate reference for marker path if needed
-            if let Some(marker_path) = &slot.marker_path {
-                if !marker_path.is_empty() && !created_refs.contains(marker_path) {
-                    created_refs.insert(marker_path.clone());
-                    
-                    let elem_var = self.generate_element_var();
-                    path_to_var.insert(marker_path.clone(), elem_var.clone());
-                    let elem_id = BindingPattern {
-                        kind: BindingPatternKind::BindingIdentifier(
-                            Box::new_in(
-                                BindingIdentifier {
-                                    span: SPAN,
-                                    name: Atom::from(self.allocator.alloc_str(&elem_var)),
-                                    symbol_id: None.into(),
-                                },
-                                self.allocator,
-                            )
-                        ),
-                        type_annotation: None,
-                        optional: false,
-                    };
-                    
-                    // Build path expression: _el$.firstChild.nextSibling...
-                    let mut expr = Expression::Identifier(
-                        Box::new_in(
-                            IdentifierReference {
-                                span: SPAN,
-                                name: Atom::from(self.allocator.alloc_str(&root_var)),
-                                reference_id: None.into(),
-                            },
-                            self.allocator,
-                        )
-                    );
-                    
-                    for segment in marker_path {
-                        expr = Expression::StaticMemberExpression(
-                            Box::new_in(
-                                StaticMemberExpression {
-                                    span: SPAN,
-                                    object: expr,
-                                    property: IdentifierName {
-                                        span: SPAN,
-                                        name: Atom::from(self.allocator.alloc_str(segment)),
-                                    },
-                                    optional: false,
-                                },
-                                self.allocator,
-                            )
-                        );
+                        ));
                     }
-                    
+
                     declarators.push(VariableDeclarator {
                         span: SPAN,
                         kind: VariableDeclarationKind::Var,
@@ -355,17 +349,21 @@ impl<'a> DomExpressions<'a> {
                 }
             }
         }
-        
+
         let var_decl = VariableDeclaration {
             span: SPAN,
             kind: VariableDeclarationKind::Var,
             declarations: declarators,
             declare: false,
         };
-        
-        (root_var, Statement::VariableDeclaration(Box::new_in(var_decl, self.allocator)), path_to_var)
+
+        (
+            root_var,
+            Statement::VariableDeclaration(Box::new_in(var_decl, self.allocator)),
+            path_to_var,
+        )
     }
-    
+
     /// Generate unique element variable name
     fn generate_element_var(&mut self) -> String {
         self.element_counter += 1;
@@ -375,7 +373,7 @@ impl<'a> DomExpressions<'a> {
             format!("_el${}", self.element_counter)
         }
     }
-    
+
     /// Create runtime calls for dynamic content from extracted expressions
     fn create_runtime_calls_from_expressions(
         &mut self,
@@ -385,17 +383,17 @@ impl<'a> DomExpressions<'a> {
         path_to_var: &std::collections::HashMap<Vec<String>, String>,
     ) -> OxcVec<'a, Statement<'a>> {
         let mut stmts = OxcVec::new_in(self.allocator);
-        
+
         // Track which expression we're at
         let mut expr_index = 0;
-        
+
         // For each dynamic slot, generate the appropriate runtime call
         for slot in &template.dynamic_slots {
             match &slot.slot_type {
                 SlotType::TextContent => {
                     // Generate insert call
                     self.add_import("insert");
-                    
+
                     if expr_index < expressions.len() {
                         // Determine marker variable (3rd argument to insert)
                         let marker_var = if let Some(marker_path) = &slot.marker_path {
@@ -403,7 +401,7 @@ impl<'a> DomExpressions<'a> {
                         } else {
                             None
                         };
-                        
+
                         if let Some(insert_stmt) = self.create_insert_call_with_marker(
                             root_var,
                             &expressions[expr_index],
@@ -413,29 +411,37 @@ impl<'a> DomExpressions<'a> {
                         }
                         expr_index += 1;
                     }
-                },
+                }
                 _ => {
                     // Other slot types not yet implemented
                     // TODO: Implement attribute, event, ref, classList, style bindings
                 }
             }
         }
-        
+
         stmts
     }
-    
+
     /// Extract all dynamic expressions from JSX element in order (cloning them)
-    fn extract_expressions_from_jsx(&self, jsx_elem: &JSXElement<'a>, expressions: &mut Vec<Expression<'a>>) {
+    fn extract_expressions_from_jsx(
+        &self,
+        jsx_elem: &JSXElement<'a>,
+        expressions: &mut Vec<Expression<'a>>,
+    ) {
         // Walk through children and extract expressions
         for child in &jsx_elem.children {
             self.extract_expressions_from_child(child, expressions);
         }
     }
-    
+
     /// Extract expressions from a JSX child (cloning them)
-    fn extract_expressions_from_child(&self, child: &JSXChild<'a>, expressions: &mut Vec<Expression<'a>>) {
+    fn extract_expressions_from_child(
+        &self,
+        child: &JSXChild<'a>,
+        expressions: &mut Vec<Expression<'a>>,
+    ) {
         use oxc_allocator::CloneIn;
-        
+
         match child {
             JSXChild::Element(elem) => {
                 // Recursively extract from nested elements
@@ -443,9 +449,9 @@ impl<'a> DomExpressions<'a> {
             }
             JSXChild::ExpressionContainer(container) => {
                 match &container.expression {
-                    JSXExpression::StringLiteral(_) |
-                    JSXExpression::NumericLiteral(_) |
-                    JSXExpression::EmptyExpression(_) => {
+                    JSXExpression::StringLiteral(_)
+                    | JSXExpression::NumericLiteral(_)
+                    | JSXExpression::EmptyExpression(_) => {
                         // Static or empty - skip (already in template)
                     }
                     // All other JSXExpression variants are dynamic expressions
@@ -466,12 +472,16 @@ impl<'a> DomExpressions<'a> {
             }
         }
     }
-    
+
     /// Create an insert call statement
-    fn create_insert_call(&self, element_var: &str, expr: &Expression<'a>) -> Option<Statement<'a>> {
+    fn create_insert_call(
+        &self,
+        element_var: &str,
+        expr: &Expression<'a>,
+    ) -> Option<Statement<'a>> {
         self.create_insert_call_with_marker(element_var, expr, None)
     }
-    
+
     /// Create an insert call statement with optional marker
     fn create_insert_call_with_marker(
         &self,
@@ -479,16 +489,16 @@ impl<'a> DomExpressions<'a> {
         expr: &Expression<'a>,
         marker_var: Option<&str>,
     ) -> Option<Statement<'a>> {
-        use oxc_ast::ast::*;
         use oxc_allocator::CloneIn;
-        
+        use oxc_ast::ast::*;
+
         // Create call to _$insert(element, expression, marker)
         let insert_fn = IdentifierReference {
             span: SPAN,
             name: Atom::from("_$insert"),
             reference_id: None.into(),
         };
-        
+
         // First argument: element reference
         let elem_arg = Argument::Identifier(Box::new_in(
             IdentifierReference {
@@ -498,10 +508,10 @@ impl<'a> DomExpressions<'a> {
             },
             self.allocator,
         ));
-        
+
         // Second argument: the expression (clone it)
         let expr_arg = Argument::from(expr.clone_in(self.allocator));
-        
+
         // Third argument: marker position (either a variable reference or null)
         let marker_arg = if let Some(marker) = marker_var {
             Argument::Identifier(Box::new_in(
@@ -513,17 +523,14 @@ impl<'a> DomExpressions<'a> {
                 self.allocator,
             ))
         } else {
-            Argument::NullLiteral(Box::new_in(
-                NullLiteral { span: SPAN },
-                self.allocator,
-            ))
+            Argument::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator))
         };
-        
+
         let mut args = OxcVec::new_in(self.allocator);
         args.push(elem_arg);
         args.push(expr_arg);
         args.push(marker_arg);
-        
+
         let call_expr = CallExpression {
             span: SPAN,
             callee: Expression::Identifier(Box::new_in(insert_fn, self.allocator)),
@@ -532,42 +539,36 @@ impl<'a> DomExpressions<'a> {
             type_arguments: None,
             pure: false,
         };
-        
-        Some(Statement::ExpressionStatement(
-            Box::new_in(
-                ExpressionStatement {
-                    span: SPAN,
-                    expression: Expression::CallExpression(Box::new_in(call_expr, self.allocator)),
-                },
-                self.allocator,
-            )
-        ))
+
+        Some(Statement::ExpressionStatement(Box::new_in(
+            ExpressionStatement {
+                span: SPAN,
+                expression: Expression::CallExpression(Box::new_in(call_expr, self.allocator)),
+            },
+            self.allocator,
+        )))
     }
-    
+
     /// Create return statement
     fn create_return_statement(&self, root_var: &str) -> Statement<'a> {
         use oxc_ast::ast::*;
-        
-        let return_expr = Expression::Identifier(
-            Box::new_in(
-                IdentifierReference {
-                    span: SPAN,
-                    name: Atom::from(self.allocator.alloc_str(root_var)),
-                    reference_id: None.into(),
-                },
-                self.allocator,
-            )
-        );
-        
-        Statement::ReturnStatement(
-            Box::new_in(
-                ReturnStatement {
-                    span: SPAN,
-                    argument: Some(return_expr),
-                },
-                self.allocator,
-            )
-        )
+
+        let return_expr = Expression::Identifier(Box::new_in(
+            IdentifierReference {
+                span: SPAN,
+                name: Atom::from(self.allocator.alloc_str(root_var)),
+                reference_id: None.into(),
+            },
+            self.allocator,
+        ));
+
+        Statement::ReturnStatement(Box::new_in(
+            ReturnStatement {
+                span: SPAN,
+                argument: Some(return_expr),
+            },
+            self.allocator,
+        ))
     }
 
     /// Create import statement for runtime functions
@@ -575,17 +576,17 @@ impl<'a> DomExpressions<'a> {
         // This function is no longer used - we create multiple import statements instead
         None
     }
-    
+
     /// Create multiple import statements (one per import)
     fn create_import_statements(&self) -> Vec<Statement<'a>> {
         use oxc_ast::ast::*;
-        
+
         let mut statements = Vec::new();
-        
+
         // Sort imports for consistency
         let mut sorted_imports: Vec<_> = self.required_imports.iter().collect();
         sorted_imports.sort();
-        
+
         for import_name in sorted_imports {
             // Create local binding name (e.g., _$template for template)
             let local_name = format!("_${}", import_name);
@@ -594,29 +595,27 @@ impl<'a> DomExpressions<'a> {
                 name: Atom::from(self.allocator.alloc_str(&local_name)),
                 symbol_id: None.into(),
             };
-            
+
             // Create imported name
             let imported = ModuleExportName::IdentifierName(IdentifierName {
                 span: SPAN,
                 name: Atom::from(self.allocator.alloc_str(import_name)),
             });
-            
+
             // Create import specifier
-            let specifier = ImportDeclarationSpecifier::ImportSpecifier(
-                Box::new_in(
-                    ImportSpecifier {
-                        span: SPAN,
-                        imported,
-                        local,
-                        import_kind: ImportOrExportKind::Value,
-                    },
-                    self.allocator,
-                )
-            );
-            
+            let specifier = ImportDeclarationSpecifier::ImportSpecifier(Box::new_in(
+                ImportSpecifier {
+                    span: SPAN,
+                    imported,
+                    local,
+                    import_kind: ImportOrExportKind::Value,
+                },
+                self.allocator,
+            ));
+
             let mut specifiers = OxcVec::new_in(self.allocator);
             specifiers.push(specifier);
-            
+
             // Create source string
             let source = StringLiteral {
                 span: SPAN,
@@ -624,7 +623,7 @@ impl<'a> DomExpressions<'a> {
                 raw: None,
                 lone_surrogates: false,
             };
-            
+
             // Create import declaration
             let import_decl = ImportDeclaration {
                 span: SPAN,
@@ -634,50 +633,47 @@ impl<'a> DomExpressions<'a> {
                 import_kind: ImportOrExportKind::Value,
                 phase: None,
             };
-            
+
             // Wrap in ModuleDeclaration and Statement
-            let module_decl = ModuleDeclaration::ImportDeclaration(
-                Box::new_in(import_decl, self.allocator)
-            );
-            
+            let module_decl =
+                ModuleDeclaration::ImportDeclaration(Box::new_in(import_decl, self.allocator));
+
             statements.push(Statement::from(module_decl));
         }
-        
+
         statements
     }
 
     /// Create template variable declarations
     fn create_template_declarations(&self) -> Option<Statement<'a>> {
         use oxc_ast::ast::*;
-        
+
         if self.template_map.is_empty() {
             return None;
         }
-        
+
         // Create variable declarators for all templates
         let mut declarators = OxcVec::new_in(self.allocator);
-        
+
         // Sort template map by variable name to get consistent order
         let mut sorted_templates: Vec<_> = self.template_map.iter().collect();
         sorted_templates.sort_by(|a, b| a.1.cmp(b.1));
-        
+
         for (html, var_name) in sorted_templates {
             // Create the binding pattern for the variable
             let id = BindingPattern {
-                kind: BindingPatternKind::BindingIdentifier(
-                    Box::new_in(
-                        BindingIdentifier {
-                            span: SPAN,
-                            name: Atom::from(self.allocator.alloc_str(var_name)),
-                            symbol_id: None.into(),
-                        },
-                        self.allocator,
-                    )
-                ),
+                kind: BindingPatternKind::BindingIdentifier(Box::new_in(
+                    BindingIdentifier {
+                        span: SPAN,
+                        name: Atom::from(self.allocator.alloc_str(var_name)),
+                        symbol_id: None.into(),
+                    },
+                    self.allocator,
+                )),
                 type_annotation: None,
                 optional: false,
             };
-            
+
             // Create template literal argument (using backticks)
             let template_element = TemplateElement {
                 span: SPAN,
@@ -688,28 +684,29 @@ impl<'a> DomExpressions<'a> {
                 },
                 lone_surrogates: false,
             };
-            
+
             let mut elements = OxcVec::new_in(self.allocator);
             elements.push(template_element);
-            
+
             let template_literal = TemplateLiteral {
                 span: SPAN,
                 quasis: elements,
                 expressions: OxcVec::new_in(self.allocator),
             };
-            
+
             // Create call to _$template(...)
             let template_fn = IdentifierReference {
                 span: SPAN,
                 name: Atom::from("_$template"),
                 reference_id: None.into(),
             };
-            
+
             let mut args = OxcVec::new_in(self.allocator);
-            args.push(Argument::TemplateLiteral(
-                Box::new_in(template_literal, self.allocator)
-            ));
-            
+            args.push(Argument::TemplateLiteral(Box::new_in(
+                template_literal,
+                self.allocator,
+            )));
+
             let init_call = CallExpression {
                 span: SPAN,
                 callee: Expression::Identifier(Box::new_in(template_fn, self.allocator)),
@@ -718,19 +715,22 @@ impl<'a> DomExpressions<'a> {
                 type_arguments: None,
                 pure: true, // Mark as /*#__PURE__*/
             };
-            
+
             // Create variable declarator
             let declarator = VariableDeclarator {
                 span: SPAN,
                 kind: VariableDeclarationKind::Var,
                 id,
-                init: Some(Expression::CallExpression(Box::new_in(init_call, self.allocator))),
+                init: Some(Expression::CallExpression(Box::new_in(
+                    init_call,
+                    self.allocator,
+                ))),
                 definite: false,
             };
-            
+
             declarators.push(declarator);
         }
-        
+
         // Create variable declaration
         let var_decl = VariableDeclaration {
             span: SPAN,
@@ -738,25 +738,26 @@ impl<'a> DomExpressions<'a> {
             declarations: declarators,
             declare: false,
         };
-        
-        Some(Statement::VariableDeclaration(
-            Box::new_in(var_decl, self.allocator)
-        ))
+
+        Some(Statement::VariableDeclaration(Box::new_in(
+            var_decl,
+            self.allocator,
+        )))
     }
 
     /// Create delegateEvents call
     fn create_delegate_events_call(&self) -> Option<Statement<'a>> {
         use oxc_ast::ast::*;
-        
+
         if self.delegated_events.is_empty() {
             return None;
         }
-        
+
         // Create array of event names
         let mut elements = OxcVec::new_in(self.allocator);
         let mut sorted_events: Vec<_> = self.delegated_events.iter().collect();
         sorted_events.sort();
-        
+
         for event in sorted_events {
             let string_lit = StringLiteral {
                 span: SPAN,
@@ -764,28 +765,30 @@ impl<'a> DomExpressions<'a> {
                 raw: None,
                 lone_surrogates: false,
             };
-            elements.push(ArrayExpressionElement::StringLiteral(
-                Box::new_in(string_lit, self.allocator)
-            ));
+            elements.push(ArrayExpressionElement::StringLiteral(Box::new_in(
+                string_lit,
+                self.allocator,
+            )));
         }
-        
+
         let array_expr = ArrayExpression {
             span: SPAN,
             elements,
         };
-        
+
         // Create call to _$delegateEvents([...])
         let fn_name = IdentifierReference {
             span: SPAN,
             name: Atom::from("_$delegateEvents"),
             reference_id: None.into(),
         };
-        
+
         let mut args = OxcVec::new_in(self.allocator);
-        args.push(Argument::ArrayExpression(
-            Box::new_in(array_expr, self.allocator)
-        ));
-        
+        args.push(Argument::ArrayExpression(Box::new_in(
+            array_expr,
+            self.allocator,
+        )));
+
         let call_expr = CallExpression {
             span: SPAN,
             callee: Expression::Identifier(Box::new_in(fn_name, self.allocator)),
@@ -794,61 +797,61 @@ impl<'a> DomExpressions<'a> {
             type_arguments: None,
             pure: false,
         };
-        
+
         // Wrap in expression statement
-        Some(Statement::ExpressionStatement(
-            Box::new_in(
-                ExpressionStatement {
-                    span: SPAN,
-                    expression: Expression::CallExpression(Box::new_in(call_expr, self.allocator)),
-                },
-                self.allocator,
-            )
-        ))
+        Some(Statement::ExpressionStatement(Box::new_in(
+            ExpressionStatement {
+                span: SPAN,
+                expression: Expression::CallExpression(Box::new_in(call_expr, self.allocator)),
+            },
+            self.allocator,
+        )))
     }
-    
+
     /// Transform a component JSX element into a createComponent call
     fn transform_component(&mut self, jsx_elem: Box<'a, JSXElement<'a>>) -> Expression<'a> {
         use oxc_ast::ast::*;
-        
+
         // Add the createComponent import
         self.add_import("createComponent");
-        
+
         // Get the component name
         let component_name = match &jsx_elem.opening_element.name {
             JSXElementName::Identifier(ident) => ident.name.clone(),
             JSXElementName::IdentifierReference(ident) => ident.name.clone(),
             _ => Atom::from("Unknown"),
         };
-        
+
         // Create the component identifier for the first argument
         let component_ident = IdentifierReference {
             span: SPAN,
             name: component_name,
             reference_id: None.into(),
         };
-        
+
         // Create arguments array
         let mut arguments = OxcVec::new_in(self.allocator);
-        
+
         // First argument: component identifier
-        arguments.push(Argument::from(Expression::Identifier(
-            Box::new_in(component_ident, self.allocator)
-        )));
-        
+        arguments.push(Argument::from(Expression::Identifier(Box::new_in(
+            component_ident,
+            self.allocator,
+        ))));
+
         // Second argument: props object
         let props_obj = self.create_component_props(&jsx_elem);
-        arguments.push(Argument::from(Expression::ObjectExpression(
-            Box::new_in(props_obj, self.allocator)
-        )));
-        
+        arguments.push(Argument::from(Expression::ObjectExpression(Box::new_in(
+            props_obj,
+            self.allocator,
+        ))));
+
         // Create the call expression: _$createComponent(Component, {...})
         let callee_ident = IdentifierReference {
             span: SPAN,
             name: Atom::from("_$createComponent"),
             reference_id: None.into(),
         };
-        
+
         let call_expr = CallExpression {
             span: SPAN,
             callee: Expression::Identifier(Box::new_in(callee_ident, self.allocator)),
@@ -857,22 +860,22 @@ impl<'a> DomExpressions<'a> {
             type_arguments: None,
             pure: false,
         };
-        
+
         Expression::CallExpression(Box::new_in(call_expr, self.allocator))
     }
-    
+
     /// Create props object for a component
     fn create_component_props(&self, jsx_elem: &JSXElement<'a>) -> ObjectExpression<'a> {
         use oxc_ast::ast::*;
-        
+
         let mut properties = OxcVec::new_in(self.allocator);
-        
+
         // Add attributes as properties
         for attr in &jsx_elem.opening_element.attributes {
             if let JSXAttributeItem::Attribute(jsx_attr) = attr {
                 if let JSXAttributeName::Identifier(name_ident) = &jsx_attr.name {
                     let prop_name = name_ident.name.clone();
-                    
+
                     // Get the value
                     let prop_value = if let Some(value) = &jsx_attr.value {
                         match value {
@@ -896,103 +899,103 @@ impl<'a> DomExpressions<'a> {
                                     _ => {
                                         // For other cases, use true
                                         Expression::BooleanLiteral(Box::new_in(
-                                            BooleanLiteral { span: SPAN, value: true },
+                                            BooleanLiteral {
+                                                span: SPAN,
+                                                value: true,
+                                            },
                                             self.allocator,
                                         ))
                                     }
                                 }
                             }
-                            _ => {
-                                Expression::BooleanLiteral(Box::new_in(
-                                    BooleanLiteral { span: SPAN, value: true },
-                                    self.allocator,
-                                ))
-                            }
+                            _ => Expression::BooleanLiteral(Box::new_in(
+                                BooleanLiteral {
+                                    span: SPAN,
+                                    value: true,
+                                },
+                                self.allocator,
+                            )),
                         }
                     } else {
                         Expression::BooleanLiteral(Box::new_in(
-                            BooleanLiteral { span: SPAN, value: true },
+                            BooleanLiteral {
+                                span: SPAN,
+                                value: true,
+                            },
                             self.allocator,
                         ))
                     };
-                    
+
                     // Create property
-                    let prop_key = PropertyKey::StaticIdentifier(
-                        Box::new_in(
-                            IdentifierName {
-                                span: SPAN,
-                                name: prop_name,
-                            },
-                            self.allocator,
-                        )
-                    );
-                    
-                    properties.push(ObjectPropertyKind::ObjectProperty(
-                        Box::new_in(
-                            ObjectProperty {
-                                span: SPAN,
-                                kind: PropertyKind::Init,
-                                key: prop_key,
-                                value: prop_value,
-                                method: false,
-                                shorthand: false,
-                                computed: false,
-                            },
-                            self.allocator,
-                        )
+                    let prop_key = PropertyKey::StaticIdentifier(Box::new_in(
+                        IdentifierName {
+                            span: SPAN,
+                            name: prop_name,
+                        },
+                        self.allocator,
                     ));
+
+                    properties.push(ObjectPropertyKind::ObjectProperty(Box::new_in(
+                        ObjectProperty {
+                            span: SPAN,
+                            kind: PropertyKind::Init,
+                            key: prop_key,
+                            value: prop_value,
+                            method: false,
+                            shorthand: false,
+                            computed: false,
+                        },
+                        self.allocator,
+                    )));
                 }
             }
         }
-        
+
         // Add children if present
         if !jsx_elem.children.is_empty() {
             let children_value = self.create_component_children(&jsx_elem.children);
-            
-            let prop_key = PropertyKey::StaticIdentifier(
-                Box::new_in(
-                    IdentifierName {
-                        span: SPAN,
-                        name: Atom::from("children"),
-                    },
-                    self.allocator,
-                )
-            );
-            
-            properties.push(ObjectPropertyKind::ObjectProperty(
-                Box::new_in(
-                    ObjectProperty {
-                        span: SPAN,
-                        kind: PropertyKind::Init,
-                        key: prop_key,
-                        value: children_value,
-                        method: false,
-                        shorthand: false,
-                        computed: false,
-                    },
-                    self.allocator,
-                )
+
+            let prop_key = PropertyKey::StaticIdentifier(Box::new_in(
+                IdentifierName {
+                    span: SPAN,
+                    name: Atom::from("children"),
+                },
+                self.allocator,
             ));
+
+            properties.push(ObjectPropertyKind::ObjectProperty(Box::new_in(
+                ObjectProperty {
+                    span: SPAN,
+                    kind: PropertyKind::Init,
+                    key: prop_key,
+                    value: children_value,
+                    method: false,
+                    shorthand: false,
+                    computed: false,
+                },
+                self.allocator,
+            )));
         }
-        
+
         ObjectExpression {
             span: SPAN,
             properties,
         }
     }
-    
+
     /// Create children value for a component (can be a single value or array)
     fn create_component_children(&self, children: &OxcVec<'a, JSXChild<'a>>) -> Expression<'a> {
         use oxc_ast::ast::*;
-        
+
         // Filter out whitespace-only text nodes
-        let significant_children: Vec<_> = children.iter().filter(|child| {
-            match child {
+        let significant_children: Vec<_> = children
+            .iter()
+            .filter(|child| match child {
                 JSXChild::Text(text) => !text.value.trim().is_empty(),
                 _ => true,
-            }
-        }).collect();
-        
+            })
+            .collect();
+
         if significant_children.len() == 1 {
             // Single child - return it directly
             self.jsx_child_to_expression(significant_children[0])
@@ -1012,40 +1015,36 @@ impl<'a> DomExpressions<'a> {
             ))
         }
     }
-    
+
     /// Convert a JSX child to an expression
     fn jsx_child_to_expression(&self, child: &JSXChild<'a>) -> Expression<'a> {
         use oxc_ast::ast::*;
-        
+
         match child {
-            JSXChild::Text(text) => {
-                Expression::StringLiteral(Box::new_in(
-                    StringLiteral {
-                        span: SPAN,
-                        value: text.value.clone(),
-                        raw: None.into(),
-                        lone_surrogates: false,
-                    },
-                    self.allocator,
-                ))
-            }
-            JSXChild::ExpressionContainer(expr_container) => {
-                match &expr_container.expression {
-                    jsx_expr if jsx_expr.is_expression() => {
-                        self.clone_expression(jsx_expr.as_expression().unwrap())
-                    }
-                    _ => {
-                        Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator))
-                    }
+            JSXChild::Text(text) => Expression::StringLiteral(Box::new_in(
+                StringLiteral {
+                    span: SPAN,
+                    value: text.value.clone(),
+                    raw: None.into(),
+                    lone_surrogates: false,
+                },
+                self.allocator,
+            )),
+            JSXChild::ExpressionContainer(expr_container) => match &expr_container.expression {
+                jsx_expr if jsx_expr.is_expression() => {
+                    self.clone_expression(jsx_expr.as_expression().unwrap())
                 }
-            }
-            JSXChild::Element(elem) => {
+                _ => {
+                    Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator))
+                }
+            },
+            JSXChild::Element(_elem) => {
                 // Transform JSX element - need to handle this recursively
                 // For now, create a call expression (elements should already be transformed in exit_expression)
                 // Return a null literal as a placeholder - the actual element should be transformed elsewhere
                 Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator))
             }
-            JSXChild::Fragment(frag) => {
+            JSXChild::Fragment(_frag) => {
                 // Transform JSX fragment
                 // Return a null literal as a placeholder - the actual fragment should be transformed elsewhere
                 Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator))
@@ -1056,19 +1055,21 @@ impl<'a> DomExpressions<'a> {
             }
         }
     }
-    
+
     /// Transform a JSX fragment into an array or string
     fn transform_fragment(&self, jsx_frag: Box<'a, JSXFragment<'a>>) -> Expression<'a> {
         use oxc_ast::ast::*;
-        
+
         // Filter out whitespace-only text nodes
-        let significant_children: Vec<_> = jsx_frag.children.iter().filter(|child| {
-            match child {
+        let significant_children: Vec<_> = jsx_frag
+            .children
+            .iter()
+            .filter(|child| match child {
                 JSXChild::Text(text) => !text.value.trim().is_empty(),
                 _ => true,
-            }
-        }).collect();
-        
+            })
+            .collect();
+
         if significant_children.len() == 1 {
             // Single child - return it directly
             self.jsx_child_to_expression(significant_children[0])
@@ -1088,53 +1089,45 @@ impl<'a> DomExpressions<'a> {
             ))
         }
     }
-    
+
     /// Clone an expression (deep copy)
     fn clone_expression(&self, expr: &Expression<'a>) -> Expression<'a> {
         use oxc_ast::ast::*;
-        
+
         match expr {
-            Expression::Identifier(ident) => {
-                Expression::Identifier(Box::new_in(
-                    IdentifierReference {
-                        span: SPAN,
-                        name: ident.name.clone(),
-                        reference_id: None.into(),
-                    },
-                    self.allocator,
-                ))
-            }
-            Expression::StringLiteral(str_lit) => {
-                Expression::StringLiteral(Box::new_in(
-                    StringLiteral {
-                        span: SPAN,
-                        value: str_lit.value.clone(),
-                        raw: None.into(),
-                        lone_surrogates: false,
-                    },
-                    self.allocator,
-                ))
-            }
-            Expression::BooleanLiteral(bool_lit) => {
-                Expression::BooleanLiteral(Box::new_in(
-                    BooleanLiteral {
-                        span: SPAN,
-                        value: bool_lit.value,
-                    },
-                    self.allocator,
-                ))
-            }
-            Expression::NumericLiteral(num_lit) => {
-                Expression::NumericLiteral(Box::new_in(
-                    NumericLiteral {
-                        span: SPAN,
-                        value: num_lit.value,
-                        raw: num_lit.raw.clone(),
-                        base: num_lit.base,
-                    },
-                    self.allocator,
-                ))
-            }
+            Expression::Identifier(ident) => Expression::Identifier(Box::new_in(
+                IdentifierReference {
+                    span: SPAN,
+                    name: ident.name.clone(),
+                    reference_id: None.into(),
+                },
+                self.allocator,
+            )),
+            Expression::StringLiteral(str_lit) => Expression::StringLiteral(Box::new_in(
+                StringLiteral {
+                    span: SPAN,
+                    value: str_lit.value.clone(),
+                    raw: None.into(),
+                    lone_surrogates: false,
+                },
+                self.allocator,
+            )),
+            Expression::BooleanLiteral(bool_lit) => Expression::BooleanLiteral(Box::new_in(
+                BooleanLiteral {
+                    span: SPAN,
+                    value: bool_lit.value,
+                },
+                self.allocator,
+            )),
+            Expression::NumericLiteral(num_lit) => Expression::NumericLiteral(Box::new_in(
+                NumericLiteral {
+                    span: SPAN,
+                    value: num_lit.value,
+                    raw: num_lit.raw.clone(),
+                    base: num_lit.base,
+                },
+                self.allocator,
+            )),
             Expression::StaticMemberExpression(static_member) => {
                 let object = self.clone_expression(&static_member.object);
                 Expression::StaticMemberExpression(Box::new_in(
@@ -1194,7 +1187,7 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
         self.element_counter = 0;
         self.required_imports.clear();
         self.delegated_events.clear();
-        
+
         // Add the template import (will be needed for any JSX)
         self.add_import("template");
     }
@@ -1208,33 +1201,34 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
 
         // Build the list of statements to inject at the beginning
         let mut new_stmts = Vec::new();
-        
+
         // 1. Add import statements (one per import)
         if !self.required_imports.is_empty() {
             let import_stmts = self.create_import_statements();
             new_stmts.extend(import_stmts);
         }
-        
+
         // 2. Add template declarations
         if !self.template_map.is_empty() {
             if let Some(template_decl) = self.create_template_declarations() {
                 new_stmts.push(template_decl);
             }
         }
-        
+
         // 3. Prepend new statements to the program
         if !new_stmts.is_empty() {
             // Get existing statements
-            let existing_stmts = std::mem::replace(&mut program.body, OxcVec::new_in(self.allocator));
-            
+            let existing_stmts =
+                std::mem::replace(&mut program.body, OxcVec::new_in(self.allocator));
+
             // Create new statement list with injected statements first
             let mut all_stmts = new_stmts;
             all_stmts.extend(existing_stmts);
-            
+
             // Replace program body
             program.body = OxcVec::from_iter_in(all_stmts.into_iter(), self.allocator);
         }
-        
+
         // 4. Add delegateEvents call if needed
         if self.options.delegate_events && !self.delegated_events.is_empty() {
             if let Some(delegate_call) = self.create_delegate_events_call() {
@@ -1261,14 +1255,14 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
         // Handle JSX elements
         // Build a template from the JSX element
         let template = crate::template::build_template_with_options(elem, Some(&self.options));
-        
+
         // Record template for optimization analysis
         self.optimizer.record_template(template.clone());
-        
+
         // Get effect wrapper name before borrowing self mutably
         let _effect_wrapper = self.options.effect_wrapper.clone(); // TODO: Use when implementing full dynamic binding
         let delegate_events = self.options.delegate_events;
-        
+
         // Track which imports are needed based on dynamic slots
         // NOTE: Currently we only generate simple template calls without dynamic binding code,
         // so we don't need to import these yet. When full IIFE generation is implemented,
@@ -1304,10 +1298,10 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
                 }
             }
         }
-        
+
         // Store the template for later code generation
         self.templates.push(template);
-        
+
         // Note: In a full implementation, we would:
         // 1. Replace the JSX element with generated code
         // 2. Create an IIFE that clones the template
@@ -1319,12 +1313,12 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
         // Handle JSX fragments
         // Fragments are converted to arrays in Solid
         // Track that we encountered one and may need special handling
-        
+
         // In a full implementation, we would:
         // 1. Process each child of the fragment
         // 2. Wrap them in an array
         // 3. Handle dynamic children appropriately
-        
+
         // For now, just note that fragments are being tracked
     }
 
@@ -1337,7 +1331,11 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
         // This is where we would process attributes
     }
 
-    fn enter_jsx_attribute(&mut self, _attr: &mut JSXAttribute<'a>, _ctx: &mut TraverseCtx<'a, ()>) {
+    fn enter_jsx_attribute(
+        &mut self,
+        _attr: &mut JSXAttribute<'a>,
+        _ctx: &mut TraverseCtx<'a, ()>,
+    ) {
         // Handle JSX attributes
         // Process special attributes and event handlers
     }
@@ -1362,30 +1360,32 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
 
     fn exit_expression(&mut self, expr: &mut Expression<'a>, _ctx: &mut TraverseCtx<'a, ()>) {
         // Replace JSX elements and fragments with appropriate calls
-        use std::mem;
         use oxc_ast::ast::*;
-        
+        use std::mem;
+
         // Handle fragments first
         if matches!(expr, Expression::JSXFragment(_)) {
-            let placeholder = Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator));
+            let placeholder =
+                Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator));
             let jsx_expr = mem::replace(expr, placeholder);
-            
+
             if let Expression::JSXFragment(jsx_frag) = jsx_expr {
                 let transformed = self.transform_fragment(jsx_frag);
                 *expr = transformed;
             }
             return;
         }
-        
+
         // Check if this is a JSX element
         if !matches!(expr, Expression::JSXElement(_)) {
             return;
         }
-        
+
         // Temporarily replace with null to get ownership
-        let placeholder = Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator));
+        let placeholder =
+            Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator));
         let jsx_expr = mem::replace(expr, placeholder);
-        
+
         // Now we have ownership of the JSX element
         if let Expression::JSXElement(jsx_elem) = jsx_expr {
             // Check if this is a component
@@ -1407,19 +1407,24 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
             }
 
             // Build template and get the template variable
-            let template = crate::template::build_template_with_options(&jsx_elem, Some(&self.options));
+            let template =
+                crate::template::build_template_with_options(&jsx_elem, Some(&self.options));
             let template_var = self.get_template_var(&template.html);
-            
+
             // Check if this template has dynamic content
             let has_dynamic_content = !template.dynamic_slots.is_empty();
-            
+
             if has_dynamic_content {
                 // Extract expressions before we lose the JSX element
                 let mut expressions = Vec::new();
                 self.extract_expressions_from_jsx(&jsx_elem, &mut expressions);
-                
+
                 // Generate an IIFE with dynamic binding code
-                let iife = self.create_template_iife_from_expressions(expressions, &template, &template_var);
+                let iife = self.create_template_iife_from_expressions(
+                    expressions,
+                    &template,
+                    &template_var,
+                );
                 *expr = Expression::CallExpression(iife);
             } else {
                 // Simple template call for static content

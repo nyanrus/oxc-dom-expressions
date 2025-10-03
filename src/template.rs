@@ -56,20 +56,28 @@ pub fn build_template(element: &JSXElement) -> Template {
 }
 
 /// Build a template from a JSX element with options
-pub fn build_template_with_options(element: &JSXElement, options: Option<&crate::options::DomExpressionsOptions>) -> Template {
+pub fn build_template_with_options(
+    element: &JSXElement,
+    options: Option<&crate::options::DomExpressionsOptions>,
+) -> Template {
     let mut template = Template {
         html: String::new(),
         dynamic_slots: Vec::new(),
     };
-    
+
     // Build standard HTML from JSX
-    build_element_html(element, &mut template.html, &mut template.dynamic_slots, &mut Vec::new());
-    
+    build_element_html(
+        element,
+        &mut template.html,
+        &mut template.dynamic_slots,
+        &mut Vec::new(),
+    );
+
     // Apply minimalization if options are provided
     if let Some(opts) = options {
         template.html = crate::template_minimalizer::minimalize_template(&template.html, opts);
     }
-    
+
     template
 }
 
@@ -82,10 +90,10 @@ fn build_element_html(
     path: &mut Vec<String>,
 ) {
     let tag_name = get_element_name(&element.opening_element);
-    
+
     // Opening tag
     let _ = write!(html, "<{}", tag_name);
-    
+
     // Process attributes
     for attr in &element.opening_element.attributes {
         if let JSXAttributeItem::Attribute(attr) = attr {
@@ -166,27 +174,27 @@ fn build_element_html(
             }
         }
     }
-    
+
     let _ = write!(html, ">");
-    
+
     // Children
     if !is_void_element(&tag_name) {
         let child_path_start = path.len();
-        
+
         // Track whether we've added any child nodes (for firstChild vs nextSibling)
         let mut has_previous_node = false;
-        
+
         for (i, child) in element.children.iter().enumerate() {
             // Check if this is the last child
             let is_last_child = i == element.children.len() - 1;
-            
+
             // Check if next child is an expression (for marker logic)
             let next_is_expression = if i + 1 < element.children.len() {
                 matches!(element.children[i + 1], JSXChild::ExpressionContainer(_))
             } else {
                 false
             };
-            
+
             // Before processing child, update path based on whether this is first node or not
             if !has_previous_node {
                 // This is the first actual DOM node
@@ -198,15 +206,22 @@ fn build_element_html(
                     *last = "nextSibling".to_string();
                 }
             }
-            
+
             // Process the child - this may add markers or elements to HTML
             // and will add dynamic slots as needed
-            build_child_html_with_context(child, html, slots, path, is_last_child, next_is_expression);
+            build_child_html_with_context(
+                child,
+                html,
+                slots,
+                path,
+                is_last_child,
+                next_is_expression,
+            );
         }
-        
+
         // Restore path
         path.truncate(child_path_start);
-        
+
         // Always add closing tag for standard HTML
         let _ = write!(html, "</{}>", tag_name);
     }
@@ -219,25 +234,23 @@ fn build_child_html_with_context(
     slots: &mut Vec<DynamicSlot>,
     path: &mut Vec<String>,
     is_last_child: bool,
-    next_is_expression: bool,
+    _next_is_expression: bool,
 ) {
     match child {
         JSXChild::Text(text) => {
             // Static text - escape for template literals
             // Only escape opening braces to match babel plugin behavior
             let text_value = text.value.as_str();
-            
+
             // Skip pure formatting whitespace (newlines + indentation)
             // BUT preserve inline spaces (e.g., between expressions)
             if text_value.trim().is_empty() && text_value.contains('\n') {
                 // This is formatting whitespace with newlines - skip it
                 return;
             }
-            
+
             // Preserve all other text, including spaces
-            let escaped = text_value
-                .replace('\\', "\\\\")
-                .replace('{', "\\{");
+            let escaped = text_value.replace('\\', "\\\\").replace('{', "\\{");
             html.push_str(&escaped);
         }
         JSXChild::Element(elem) => {
@@ -249,7 +262,9 @@ fn build_child_html_with_context(
                 JSXExpression::StringLiteral(string_lit) => {
                     // Static string - include in template with escaping
                     // Only escape opening braces to match babel plugin behavior
-                    let escaped = string_lit.value.as_str()
+                    let escaped = string_lit
+                        .value
+                        .as_str()
                         .replace('\\', "\\\\")
                         .replace('{', "\\{");
                     html.push_str(&escaped);
@@ -266,24 +281,20 @@ fn build_child_html_with_context(
                 }
                 _ => {}
             }
-            // Dynamic content - add marker only if:
-            // 1. This is not the last child AND
-            // 2. The next child is also an expression (no static content to use as marker)
-            let marker_path = if !is_last_child && next_is_expression {
+
+            // Dynamic content - add marker if not the last child
+            // The marker helps position where to insert the dynamic content
+            let marker_path = if !is_last_child {
                 html.push_str("<!>");
                 // The marker we just added is at the current path
-                Some(path.clone())
-            } else if !is_last_child {
-                // Next child is static content (text or element) - use it as marker
-                // The next child will be at the current path (since this expression doesn't add a DOM node)
                 Some(path.clone())
             } else {
                 // No marker for trailing expressions
                 None
             };
-            
+
             slots.push(DynamicSlot {
-                path: Vec::new(),  // Insert into parent element (empty path)
+                path: Vec::new(), // Insert into parent element (empty path)
                 slot_type: SlotType::TextContent,
                 marker_path,
             });
@@ -306,9 +317,7 @@ fn get_element_name(opening: &JSXOpeningElement) -> String {
             // Component member expression - not supported in templates
             "div".to_string()
         }
-        JSXElementName::ThisExpression(_) => {
-            "div".to_string()
-        }
+        JSXElementName::ThisExpression(_) => "div".to_string(),
     }
 }
 
@@ -324,9 +333,10 @@ fn get_attribute_name(name: &JSXAttributeName) -> Option<String> {
                 _ => attr_name.to_string(),
             })
         }
-        JSXAttributeName::NamespacedName(namespaced) => {
-            Some(format!("{}:{}", namespaced.namespace.name, namespaced.name.name))
-        }
+        JSXAttributeName::NamespacedName(namespaced) => Some(format!(
+            "{}:{}",
+            namespaced.namespace.name, namespaced.name.name
+        )),
     }
 }
 
@@ -353,7 +363,7 @@ mod tests {
 
     // Note: These are placeholder tests
     // In a full implementation, we would parse JSX and test template generation
-    
+
     #[test]
     fn test_template_struct() {
         let template = Template {

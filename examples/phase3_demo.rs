@@ -24,7 +24,10 @@ fn main() {
     let transformer = DomExpressions::new(&allocator, options);
 
     println!("Configuration:");
-    println!("  Event delegation: {}", transformer.options().delegate_events);
+    println!(
+        "  Event delegation: {}",
+        transformer.options().delegate_events
+    );
     println!("  Module: {}", transformer.options().module_name);
     println!();
 
