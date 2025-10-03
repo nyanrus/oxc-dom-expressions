@@ -196,16 +196,19 @@ fn build_child_html(
 ) {
     match child {
         JSXChild::Text(text) => {
-            // Static text - only include if non-whitespace
+            // Static text - escape for template literals
+            // Only escape opening braces to match babel plugin behavior
             let text_value = text.value.as_str();
-            // Skip whitespace-only text nodes (common in formatted JSX)
-            if text_value.trim().is_empty() {
+            
+            // Skip pure formatting whitespace (newlines + indentation)
+            // BUT preserve inline spaces (e.g., between expressions)
+            if text_value.trim().is_empty() && text_value.contains('\n') {
+                // This is formatting whitespace with newlines - skip it
                 return;
             }
-            // Trim and escape for template literals
-            // Only escape opening braces to match babel plugin behavior
-            let trimmed = text_value.trim();
-            let escaped = trimmed
+            
+            // Preserve all other text, including spaces
+            let escaped = text_value
                 .replace('\\', "\\\\")
                 .replace('{', "\\{");
             html.push_str(&escaped);
@@ -236,7 +239,8 @@ fn build_child_html(
                 }
                 _ => {}
             }
-            // Dynamic content - leave empty in template and record the slot
+            // Dynamic content - add marker to template and record the slot
+            html.push_str("<!>");
             slots.push(DynamicSlot {
                 path: path.clone(),
                 slot_type: SlotType::TextContent,
