@@ -180,6 +180,13 @@ fn build_element_html(
             // Check if this is the last child
             let is_last_child = i == element.children.len() - 1;
             
+            // Check if next child is an expression (for marker logic)
+            let next_is_expression = if i + 1 < element.children.len() {
+                matches!(element.children[i + 1], JSXChild::ExpressionContainer(_))
+            } else {
+                false
+            };
+            
             // Before processing child, update path based on whether this is first node or not
             if !has_previous_node {
                 // This is the first actual DOM node
@@ -194,7 +201,7 @@ fn build_element_html(
             
             // Process the child - this may add markers or elements to HTML
             // and will add dynamic slots as needed
-            build_child_html_with_context(child, html, slots, path, is_last_child);
+            build_child_html_with_context(child, html, slots, path, is_last_child, next_is_expression);
         }
         
         // Restore path
@@ -212,6 +219,7 @@ fn build_child_html_with_context(
     slots: &mut Vec<DynamicSlot>,
     path: &mut Vec<String>,
     is_last_child: bool,
+    next_is_expression: bool,
 ) {
     match child {
         JSXChild::Text(text) => {
@@ -258,11 +266,16 @@ fn build_child_html_with_context(
                 }
                 _ => {}
             }
-            // Dynamic content - add marker to template ONLY if not the last child
-            // and record the slot
-            let marker_path = if !is_last_child {
+            // Dynamic content - add marker only if:
+            // 1. This is not the last child AND
+            // 2. The next child is also an expression (no static content to use as marker)
+            let marker_path = if !is_last_child && next_is_expression {
                 html.push_str("<!>");
                 // The marker we just added is at the current path
+                Some(path.clone())
+            } else if !is_last_child {
+                // Next child is static content (text or element) - use it as marker
+                // The next child will be at the current path (since this expression doesn't add a DOM node)
                 Some(path.clone())
             } else {
                 // No marker for trailing expressions
