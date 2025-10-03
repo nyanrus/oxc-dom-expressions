@@ -484,10 +484,15 @@ impl<'a> DomExpressions<'a> {
 
     /// Create import statement for runtime functions
     fn create_import_statement(&self) -> Option<Statement<'a>> {
+        // This function is no longer used - we create multiple import statements instead
+        None
+    }
+    
+    /// Create multiple import statements (one per import)
+    fn create_import_statements(&self) -> Vec<Statement<'a>> {
         use oxc_ast::ast::*;
         
-        // Create import specifiers for each required import
-        let mut specifiers = OxcVec::new_in(self.allocator);
+        let mut statements = Vec::new();
         
         // Sort imports for consistency
         let mut sorted_imports: Vec<_> = self.required_imports.iter().collect();
@@ -521,33 +526,36 @@ impl<'a> DomExpressions<'a> {
                 )
             );
             
+            let mut specifiers = OxcVec::new_in(self.allocator);
             specifiers.push(specifier);
+            
+            // Create source string
+            let source = StringLiteral {
+                span: SPAN,
+                value: Atom::from(self.allocator.alloc_str(&self.options.module_name)),
+                raw: None,
+                lone_surrogates: false,
+            };
+            
+            // Create import declaration
+            let import_decl = ImportDeclaration {
+                span: SPAN,
+                specifiers: Some(specifiers),
+                source,
+                with_clause: None,
+                import_kind: ImportOrExportKind::Value,
+                phase: None,
+            };
+            
+            // Wrap in ModuleDeclaration and Statement
+            let module_decl = ModuleDeclaration::ImportDeclaration(
+                Box::new_in(import_decl, self.allocator)
+            );
+            
+            statements.push(Statement::from(module_decl));
         }
         
-        // Create source string
-        let source = StringLiteral {
-            span: SPAN,
-            value: Atom::from(self.allocator.alloc_str(&self.options.module_name)),
-            raw: None,
-            lone_surrogates: false,
-        };
-        
-        // Create import declaration
-        let import_decl = ImportDeclaration {
-            span: SPAN,
-            specifiers: Some(specifiers),
-            source,
-            with_clause: None,
-            import_kind: ImportOrExportKind::Value,
-            phase: None, // No phase for regular imports
-        };
-        
-        // Wrap in ModuleDeclaration and Statement
-        let module_decl = ModuleDeclaration::ImportDeclaration(
-            Box::new_in(import_decl, self.allocator)
-        );
-        
-        Some(Statement::from(module_decl))
+        statements
     }
 
     /// Create template variable declarations
@@ -1102,11 +1110,10 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
         // Build the list of statements to inject at the beginning
         let mut new_stmts = Vec::new();
         
-        // 1. Add import statement
+        // 1. Add import statements (one per import)
         if !self.required_imports.is_empty() {
-            if let Some(import_stmt) = self.create_import_statement() {
-                new_stmts.push(import_stmt);
-            }
+            let import_stmts = self.create_import_statements();
+            new_stmts.extend(import_stmts);
         }
         
         // 2. Add template declarations
