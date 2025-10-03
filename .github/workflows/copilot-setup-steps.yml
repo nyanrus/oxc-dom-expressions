@@ -46,3 +46,6 @@ jobs:
 
       - name: Verify Configuration
         run: cat "$HOME/.serena/serena_config.yml"
+
+      - name: Install rust-analyzer
+        run: rustup component add rust-analyzer
