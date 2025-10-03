@@ -302,14 +302,17 @@ fn test_template_transformation_with_special_bindings() {
             DynamicSlot {
                 path: vec![],
                 slot_type: SlotType::Ref,
+                marker_path: None,
             },
             DynamicSlot {
                 path: vec![],
                 slot_type: SlotType::ClassList,
+                marker_path: None,
             },
             DynamicSlot {
                 path: vec![],
                 slot_type: SlotType::StyleObject,
+                marker_path: None,
             },
         ],
     };
@@ -335,14 +338,17 @@ fn test_event_delegation_slot_types() {
             DynamicSlot {
                 path: vec![],
                 slot_type: SlotType::EventHandler("click".to_string()),
+                marker_path: None,
             },
             DynamicSlot {
                 path: vec![],
                 slot_type: SlotType::OnEvent("CustomEvent".to_string()),
+                marker_path: None,
             },
             DynamicSlot {
                 path: vec![],
                 slot_type: SlotType::OnCaptureEvent("Click".to_string()),
+                marker_path: None,
             },
         ],
     };

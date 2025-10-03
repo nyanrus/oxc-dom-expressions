@@ -1,4 +1,47 @@
 //! Template string generation from JSX elements
+//!
+//! This module handles the conversion of JSX elements into HTML template strings
+//! with markers for dynamic content positions.
+//!
+//! # Template Structure
+//!
+//! A template consists of:
+//! - **HTML string**: Static HTML structure with placeholders for dynamic content
+//! - **Dynamic slots**: Positions where dynamic content needs to be inserted
+//!
+//! # Example
+//!
+//! Input JSX:
+//! ```jsx
+//! <div class="container">
+//!   <span>{message}</span>
+//! </div>
+//! ```
+//!
+//! Output Template:
+//! ```rust
+//! Template {
+//!     html: "<div class=\"container\"><span>",
+//!     dynamic_slots: [
+//!         DynamicSlot {
+//!             path: vec!["firstChild"],  // Path to <span>
+//!             slot_type: SlotType::TextContent,
+//!             marker_path: None,
+//!         }
+//!     ]
+//! }
+//! ```
+//!
+//! # Dynamic Slot Types
+//!
+//! - **TextContent**: Text insertion points
+//! - **Attribute**: Dynamic attributes (id, class, etc.)
+//! - **EventHandler**: Event handlers (onClick, etc.)
+//! - **Ref**: Element references
+//! - **ClassList**: Dynamic class bindings
+//! - **StyleObject**: Dynamic style objects
+//! - **OnEvent**: Custom events (on: prefix)
+//! - **OnCaptureEvent**: Capture phase events (oncapture: prefix)
 
 use oxc_ast::ast::*;
 use std::fmt::Write;
