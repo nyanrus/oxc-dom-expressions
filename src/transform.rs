@@ -25,8 +25,8 @@ pub struct DomExpressions<'a> {
     template_counter: usize,
     /// Counter for generating unique element variable names
     element_counter: usize,
-    /// Set of required imports
-    required_imports: HashSet<String>,
+    /// List of required imports (preserves insertion order)
+    required_imports: Vec<String>,
     /// Set of events that need delegation
     delegated_events: HashSet<String>,
     /// Optimizer for template analysis
@@ -43,7 +43,7 @@ impl<'a> DomExpressions<'a> {
             template_map: HashMap::new(),
             template_counter: 0,
             element_counter: 0,
-            required_imports: HashSet::new(),
+            required_imports: Vec::new(),
             delegated_events: HashSet::new(),
             optimizer: TemplateOptimizer::new(),
         }
@@ -85,9 +85,11 @@ impl<'a> DomExpressions<'a> {
         }
     }
 
-    /// Add a required import
+    /// Add a required import (preserves insertion order)
     fn add_import(&mut self, name: &str) {
-        self.required_imports.insert(name.to_string());
+        if !self.required_imports.contains(&name.to_string()) {
+            self.required_imports.push(name.to_string());
+        }
     }
 
     /// Add an event for delegation
@@ -583,9 +585,41 @@ impl<'a> DomExpressions<'a> {
 
         let mut statements = Vec::new();
 
-        // Sort imports for consistency
+        // Define import priority order (lower number = higher priority)
+        let get_priority = |name: &str| -> usize {
+            match name {
+                "template" => 0,
+                "delegateEvents" => 1,
+                "createComponent" => 2,
+                "memo" => 3,
+                "For" => 4,
+                "Show" => 5,
+                "Suspense" => 6,
+                "SuspenseList" => 7,
+                "Switch" => 8,
+                "Match" => 9,
+                "Index" => 10,
+                "ErrorBoundary" => 11,
+                "mergeProps" => 12,
+                "spread" => 13,
+                "use" => 14,
+                "insert" => 15,
+                "setAttribute" => 16,
+                "setAttributeNS" => 17,
+                "setBoolAttribute" => 18,
+                "className" => 19,
+                "style" => 20,
+                "setStyleProperty" => 21,
+                "addEventListener" => 22,
+                "effect" => 23,
+                "getOwner" => 24,
+                _ => 100, // Unknown imports go last
+            }
+        };
+
+        // Sort imports by priority
         let mut sorted_imports: Vec<_> = self.required_imports.iter().collect();
-        sorted_imports.sort();
+        sorted_imports.sort_by_key(|name| get_priority(name));
 
         for import_name in sorted_imports {
             // Create local binding name (e.g., _$template for template)
@@ -655,9 +689,21 @@ impl<'a> DomExpressions<'a> {
         // Create variable declarators for all templates
         let mut declarators = OxcVec::new_in(self.allocator);
 
-        // Sort template map by variable name to get consistent order
+        // Sort template map by variable name to get consistent order (numerically)
         let mut sorted_templates: Vec<_> = self.template_map.iter().collect();
-        sorted_templates.sort_by(|a, b| a.1.cmp(b.1));
+        sorted_templates.sort_by(|a, b| {
+            // Extract the numeric part from variable names like "_tmpl$" or "_tmpl$2"
+            let get_num = |name: &str| -> usize {
+                if name == "_tmpl$" {
+                    1
+                } else {
+                    name.strip_prefix("_tmpl$")
+                        .and_then(|s| s.parse::<usize>().ok())
+                        .unwrap_or(0)
+                }
+            };
+            get_num(a.1).cmp(&get_num(b.1))
+        });
 
         for (html, var_name) in sorted_templates {
             // Create the binding pattern for the variable
