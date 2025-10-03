@@ -35,6 +35,7 @@ fn serialize_html(nodes: &[HtmlNode], options: &DomExpressionsOptions, is_root: 
 fn serialize_node(node: &HtmlNode, options: &DomExpressionsOptions, on_last_path: bool, _is_last_sibling: bool) -> String {
     match node {
         HtmlNode::Text(text) => text.clone(),
+        HtmlNode::Marker => "<!>".to_string(),
         HtmlNode::Element { tag, attributes, children, is_void } => {
             let mut result = String::new();
             

@@ -164,6 +164,9 @@ fn build_element_html(
         let child_path_start = path.len();
         
         for (i, child) in element.children.iter().enumerate() {
+            // Check if this is the last child
+            let is_last_child = i == element.children.len() - 1;
+            
             // Update path for element children
             if matches!(child, JSXChild::Element(_)) {
                 if i == 0 || !element.children[..i].iter().any(|c| matches!(c, JSXChild::Element(_))) {
@@ -176,7 +179,7 @@ fn build_element_html(
                 }
             }
             
-            build_child_html(child, html, slots, path);
+            build_child_html_with_context(child, html, slots, path, is_last_child);
         }
         
         // Restore path
@@ -187,12 +190,13 @@ fn build_element_html(
     }
 }
 
-/// Build HTML for a JSX child
-fn build_child_html(
+/// Build HTML for a JSX child with context about its position
+fn build_child_html_with_context(
     child: &JSXChild,
     html: &mut String,
     slots: &mut Vec<DynamicSlot>,
     path: &mut Vec<String>,
+    is_last_child: bool,
 ) {
     match child {
         JSXChild::Text(text) => {
@@ -239,8 +243,11 @@ fn build_child_html(
                 }
                 _ => {}
             }
-            // Dynamic content - add marker to template and record the slot
-            html.push_str("<!>");
+            // Dynamic content - add marker to template ONLY if not the last child
+            // and record the slot
+            if !is_last_child {
+                html.push_str("<!>");
+            }
             slots.push(DynamicSlot {
                 path: path.clone(),
                 slot_type: SlotType::TextContent,

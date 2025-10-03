@@ -24,6 +24,8 @@ pub enum HtmlNode {
         is_void: bool,
     },
     Text(String),
+    /// Marker node for dynamic content (<!>)
+    Marker,
 }
 
 /// Parse HTML into an AST
@@ -58,6 +60,17 @@ fn parse_node(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<HtmlNo
     
     if chars.peek() == Some(&'<') {
         chars.next(); // consume '<'
+        
+        // Check if it's a marker node <!>
+        if chars.peek() == Some(&'!') {
+            chars.next(); // consume '!'
+            if chars.peek() == Some(&'>') {
+                chars.next(); // consume '>'
+                return Some(HtmlNode::Marker);
+            }
+            // If not <!>, this is unexpected, treat as text
+            return Some(HtmlNode::Text("<!".to_string()));
+        }
         
         // Check if it's a closing tag
         if chars.peek() == Some(&'/') {
