@@ -1,6 +1,6 @@
 //! Main transformer for DOM expressions
 
-use oxc_allocator::{Allocator, Box};
+use oxc_allocator::{Allocator, Box, CloneIn};
 use oxc_allocator::Vec as OxcVec;
 use oxc_ast::ast::*;
 use oxc_traverse::{Traverse, TraverseCtx};
@@ -120,7 +120,7 @@ impl<'a> DomExpressions<'a> {
     /// Create an IIFE that clones template and applies dynamic bindings
     fn create_template_iife(
         &mut self,
-        jsx_elem: &JSXElement<'a>,
+        jsx_elem: &JSXElement<'_>,
         template: &Template,
         template_var: &str,
     ) -> Box<'a, CallExpression<'a>> {
@@ -315,29 +315,41 @@ impl<'a> DomExpressions<'a> {
     /// Create runtime calls for dynamic content
     fn create_runtime_calls(
         &mut self,
-        jsx_elem: &JSXElement<'a>,
+        jsx_elem: &JSXElement<'_>,
         template: &Template,
         root_var: &str,
     ) -> OxcVec<'a, Statement<'a>> {
-        let stmts = OxcVec::new_in(self.allocator);
+        let mut stmts = OxcVec::new_in(self.allocator);
         
         // Store effect_wrapper to avoid borrow issues
         let effect_wrapper = self.options.effect_wrapper.clone();
         let delegate_events = self.options.delegate_events;
         
+        // Extract and clone expressions from JSX that correspond to dynamic slots
+        // Clone them immediately to avoid borrow checker issues
+        let expressions = self.collect_and_clone_expressions(jsx_elem, template);
+        
         // For each dynamic slot, generate the appropriate runtime call
-        for slot in &template.dynamic_slots {
+        for (idx, slot) in template.dynamic_slots.iter().enumerate() {
             match &slot.slot_type {
                 SlotType::TextContent => {
                     // Generate insert call
                     self.add_import("insert");
-                    // TODO: Generate actual insert call with expression
+                    if let Some(expr) = expressions.get(idx) {
+                        if let Some(stmt) = self.create_insert_call_from_expr(expr, &slot.path, root_var) {
+                            stmts.push(stmt);
+                        }
+                    }
                 },
-                SlotType::Attribute(_attr_name) => {
+                SlotType::Attribute(attr_name) => {
                     // Generate setAttribute/effect call
                     self.add_import("setAttribute");
                     self.add_import(&effect_wrapper);
-                    // TODO: Generate actual attribute setting code
+                    if let Some(expr) = expressions.get(idx) {
+                        if let Some(stmt) = self.create_set_attribute_call_from_expr(expr, attr_name, &slot.path, root_var) {
+                            stmts.push(stmt);
+                        }
+                    }
                 },
                 SlotType::EventHandler(event_name) => {
                     if delegate_events && should_delegate_event(event_name) {
@@ -364,12 +376,161 @@ impl<'a> DomExpressions<'a> {
             }
         }
         
-        // For now, return empty statements
-        // The full implementation would need to extract expressions from JSX
-        // and generate the appropriate calls
-        let _ = (jsx_elem, root_var); // Silence unused warnings
-        
         stmts
+    }
+    
+    /// Collect and clone expressions from JSX to avoid borrow checker issues
+    fn collect_and_clone_expressions(
+        &self,
+        jsx_elem: &JSXElement<'_>,
+        _template: &Template,
+    ) -> Vec<Expression<'a>> {
+        let mut expressions = Vec::new();
+        
+        // Extract expressions from children
+        self.collect_expressions_from_children(&jsx_elem.children, &mut expressions);
+        
+        // Extract expressions from attributes
+        for attr in &jsx_elem.opening_element.attributes {
+            if let JSXAttributeItem::Attribute(attr) = attr {
+                if let Some(JSXAttributeValue::ExpressionContainer(container)) = &attr.value {
+                    if let Some(expr) = container.expression.as_expression() {
+                        expressions.push(expr.clone_in(self.allocator));
+                    }
+                }
+            }
+        }
+        
+        expressions
+    }
+    
+    /// Recursively collect and clone expressions from JSX children
+    fn collect_expressions_from_children(
+        &self,
+        children: &OxcVec<'_, JSXChild<'_>>,
+        expressions: &mut Vec<Expression<'a>>,
+    ) {
+        for child in children {
+            match child {
+                JSXChild::ExpressionContainer(container) => {
+                    // Skip static literals and empty expressions
+                    match &container.expression {
+                        JSXExpression::StringLiteral(_) |
+                        JSXExpression::NumericLiteral(_) |
+                        JSXExpression::EmptyExpression(_) => {
+                            // Skip static content
+                        }
+                        _ => {
+                            if let Some(expr) = container.expression.as_expression() {
+                                expressions.push(expr.clone_in(self.allocator));
+                            }
+                        }
+                    }
+                }
+                JSXChild::Element(elem) => {
+                    // Recursively extract from nested elements
+                    self.collect_expressions_from_children(&elem.children, expressions);
+                }
+                _ => {}
+            }
+        }
+    }
+    
+    /// Create an insert call statement from a cloned expression
+    fn create_insert_call_from_expr(
+        &self,
+        expr: &Expression<'a>,
+        path: &[String],
+        root_var: &str,
+    ) -> Option<Statement<'a>> {
+        use oxc_ast::ast::*;
+        
+        // Determine the target element variable
+        let (target_var, marker_var) = if path.is_empty() {
+            // Inserting into root element
+            (root_var.to_string(), None)
+        } else {
+            // Need to find the element reference for this path
+            // For now, use a simplified approach
+            let elem_idx = path.len();
+            let target = if elem_idx == 0 {
+                root_var.to_string()
+            } else {
+                format!("_el${}", elem_idx + 1)
+            };
+            (target, Some("null"))
+        };
+        
+        // Create the _$insert call: _$insert(target, expression, marker)
+        let fn_name = IdentifierReference {
+            span: SPAN,
+            name: Atom::from("_$insert"),
+            reference_id: None.into(),
+        };
+        
+        let mut args = OxcVec::new_in(self.allocator);
+        
+        // First argument: target element
+        args.push(Argument::from(Expression::Identifier(
+            Box::new_in(
+                IdentifierReference {
+                    span: SPAN,
+                    name: Atom::from(self.allocator.alloc_str(&target_var)),
+                    reference_id: None.into(),
+                },
+                self.allocator,
+            )
+        )));
+        
+        // Second argument: the expression to insert
+        args.push(Argument::from(expr.clone_in(self.allocator)));
+        
+        // Third argument: marker (null or nextSibling reference)
+        let marker_expr = if let Some(_marker) = marker_var {
+            // null literal
+            Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator))
+        } else {
+            Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator))
+        };
+        args.push(Argument::from(marker_expr));
+        
+        let call_expr = CallExpression {
+            span: SPAN,
+            callee: Expression::Identifier(Box::new_in(fn_name, self.allocator)),
+            arguments: args,
+            optional: false,
+            type_arguments: None,
+            pure: false,
+        };
+        
+        Some(Statement::ExpressionStatement(
+            Box::new_in(
+                ExpressionStatement {
+                    span: SPAN,
+                    expression: Expression::CallExpression(Box::new_in(call_expr, self.allocator)),
+                },
+                self.allocator,
+            )
+        ))
+    }
+    
+    /// Create a setAttribute call statement (for now, simplified)
+    fn create_set_attribute_call_from_expr(
+        &self,
+        _expr: &Expression<'a>,
+        _attr_name: &str,
+        _path: &[String],
+        _root_var: &str,
+    ) -> Option<Statement<'a>> {
+        // TODO: Implement setAttribute call generation
+        None
+    }
+    
+    /// Clone an expression (deep copy in the allocator) - now unused but kept for potential future use
+    #[allow(dead_code)]
+    fn clone_expression(&self, expr: &Expression<'_>) -> Expression<'a> {
+        // Use CloneIn to properly clone the expression into our allocator
+        expr.clone_in(self.allocator)
     }
     
     /// Create return statement
