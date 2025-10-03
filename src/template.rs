@@ -275,7 +275,7 @@ fn build_child_html_with_context(
     slots: &mut Vec<DynamicSlot>,
     path: &mut Vec<String>,
     is_last_child: bool,
-    _next_is_expression: bool,
+    next_is_expression: bool,
 ) {
     match child {
         JSXChild::Text(text) => {
@@ -323,14 +323,23 @@ fn build_child_html_with_context(
                 _ => {}
             }
 
-            // Dynamic content - add marker if not the last child
-            // The marker helps position where to insert the dynamic content
-            let marker_path = if !is_last_child {
+            // Dynamic content - determine marker strategy:
+            // - If next child is also an expression: add <!> marker at current position
+            // - If next child is static content: use that static content as the insertion point
+            // - If this is the last child: no marker (insert at end)
+            let marker_path = if next_is_expression {
+                // Next child is also dynamic - add a marker comment
                 html.push_str("<!>");
                 // The marker we just added is at the current path
                 Some(path.clone())
+            } else if !is_last_child {
+                // Next child exists and is static content - it will be our insertion point
+                // The next sibling's path will be current path + "nextSibling"
+                let mut next_path = path.clone();
+                next_path.push("nextSibling".to_string());
+                Some(next_path)
             } else {
-                // No marker for trailing expressions
+                // This is the last child - no marker needed (insert at end)
                 None
             };
 

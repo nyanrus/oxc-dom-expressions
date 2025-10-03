@@ -1371,88 +1371,9 @@ impl<'a> DomExpressions<'a> {
 
     /// Clone an expression (deep copy)
     fn clone_expression(&self, expr: &Expression<'a>) -> Expression<'a> {
-        use oxc_ast::ast::*;
-
-        match expr {
-            Expression::Identifier(ident) => Expression::Identifier(Box::new_in(
-                IdentifierReference {
-                    span: SPAN,
-                    name: ident.name,
-                    reference_id: None.into(),
-                },
-                self.allocator,
-            )),
-            Expression::StringLiteral(str_lit) => Expression::StringLiteral(Box::new_in(
-                StringLiteral {
-                    span: SPAN,
-                    value: str_lit.value,
-                    raw: None,
-                    lone_surrogates: false,
-                },
-                self.allocator,
-            )),
-            Expression::BooleanLiteral(bool_lit) => Expression::BooleanLiteral(Box::new_in(
-                BooleanLiteral {
-                    span: SPAN,
-                    value: bool_lit.value,
-                },
-                self.allocator,
-            )),
-            Expression::NumericLiteral(num_lit) => Expression::NumericLiteral(Box::new_in(
-                NumericLiteral {
-                    span: SPAN,
-                    value: num_lit.value,
-                    raw: num_lit.raw,
-                    base: num_lit.base,
-                },
-                self.allocator,
-            )),
-            Expression::StaticMemberExpression(static_member) => {
-                let object = self.clone_expression(&static_member.object);
-                Expression::StaticMemberExpression(Box::new_in(
-                    StaticMemberExpression {
-                        span: SPAN,
-                        object,
-                        property: IdentifierName {
-                            span: SPAN,
-                            name: static_member.property.name,
-                        },
-                        optional: static_member.optional,
-                    },
-                    self.allocator,
-                ))
-            }
-            Expression::ComputedMemberExpression(computed_member) => {
-                let object = self.clone_expression(&computed_member.object);
-                let expression = self.clone_expression(&computed_member.expression);
-                Expression::ComputedMemberExpression(Box::new_in(
-                    ComputedMemberExpression {
-                        span: SPAN,
-                        object,
-                        expression,
-                        optional: computed_member.optional,
-                    },
-                    self.allocator,
-                ))
-            }
-            Expression::BinaryExpression(bin_expr) => {
-                let left = self.clone_expression(&bin_expr.left);
-                let right = self.clone_expression(&bin_expr.right);
-                Expression::BinaryExpression(Box::new_in(
-                    BinaryExpression {
-                        span: SPAN,
-                        left,
-                        operator: bin_expr.operator,
-                        right,
-                    },
-                    self.allocator,
-                ))
-            }
-            _ => {
-                // For other expression types, return a null literal for now
-                Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator))
-            }
-        }
+        use oxc_allocator::CloneIn;
+        // Use CloneIn trait for deep cloning
+        expr.clone_in(self.allocator)
     }
 }
 
