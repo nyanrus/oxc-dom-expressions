@@ -25,3 +25,24 @@ jobs:
 
       - name: Set up Python
         run: uv python install
+
+      - name: Create Serena config directory
+        run: mkdir -p ~/.serena
+
+      - name: Init Serena MCP (generates config)
+        run: |
+          timeout 5 uvx --from git+https://github.com/oraios/serena serena start-mcp-server || true
+
+      - name: Add initial_instructions to Serena Config
+        run: |
+          CONFIG_FILE="$HOME/.serena/serena_config.yml"
+          
+          if [ -f "$CONFIG_FILE" ]; then
+            sed -i 's/included_optional_tools: \[\]/included_optional_tools: ["initial_instructions"]/' "$CONFIG_FILE"
+          else
+            echo "Config file not found at $CONFIG_FILE"
+            exit 1
+          fi
+
+      - name: Verify Configuration
+        run: cat "$HOME/.serena/serena_config.yml"
