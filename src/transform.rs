@@ -118,9 +118,9 @@ impl<'a> DomExpressions<'a> {
     }
 
     /// Create an IIFE that clones template and applies dynamic bindings
-    fn create_template_iife(
+    fn create_template_iife_from_expressions(
         &mut self,
-        jsx_elem: &JSXElement<'a>,
+        expressions: Vec<Expression<'a>>,
         template: &Template,
         template_var: &str,
     ) -> Box<'a, CallExpression<'a>> {
@@ -136,7 +136,7 @@ impl<'a> DomExpressions<'a> {
         body_stmts.push(elem_decls);
         
         // 3. Create runtime calls for dynamic content
-        let runtime_stmts = self.create_runtime_calls(jsx_elem, template, &root_var);
+        let runtime_stmts = self.create_runtime_calls_from_expressions(&expressions, template, &root_var);
         body_stmts.extend(runtime_stmts);
         
         // 4. Create return statement
@@ -312,64 +312,148 @@ impl<'a> DomExpressions<'a> {
         }
     }
     
-    /// Create runtime calls for dynamic content
-    fn create_runtime_calls(
+    /// Create runtime calls for dynamic content from extracted expressions
+    fn create_runtime_calls_from_expressions(
         &mut self,
-        jsx_elem: &JSXElement<'a>,
+        expressions: &[Expression<'a>],
         template: &Template,
         root_var: &str,
     ) -> OxcVec<'a, Statement<'a>> {
-        let stmts = OxcVec::new_in(self.allocator);
+        let mut stmts = OxcVec::new_in(self.allocator);
         
-        // Store effect_wrapper to avoid borrow issues
-        let effect_wrapper = self.options.effect_wrapper.clone();
-        let delegate_events = self.options.delegate_events;
+        // Track which expression we're at
+        let mut expr_index = 0;
+        let mut elem_var_counter = 1;
         
         // For each dynamic slot, generate the appropriate runtime call
         for slot in &template.dynamic_slots {
+            // Determine the element variable name for this slot
+            let element_var = if slot.path.is_empty() {
+                root_var.to_string()
+            } else {
+                elem_var_counter += 1;
+                format!("_el${}", elem_var_counter)
+            };
+            
             match &slot.slot_type {
                 SlotType::TextContent => {
                     // Generate insert call
                     self.add_import("insert");
-                    // TODO: Generate actual insert call with expression
-                },
-                SlotType::Attribute(_attr_name) => {
-                    // Generate setAttribute/effect call
-                    self.add_import("setAttribute");
-                    self.add_import(&effect_wrapper);
-                    // TODO: Generate actual attribute setting code
-                },
-                SlotType::EventHandler(event_name) => {
-                    if delegate_events && should_delegate_event(event_name) {
-                        self.add_delegated_event(event_name);
+                    
+                    if expr_index < expressions.len() {
+                        if let Some(insert_stmt) = self.create_insert_call(&element_var, &expressions[expr_index]) {
+                            stmts.push(insert_stmt);
+                        }
+                        expr_index += 1;
                     }
-                    // TODO: Generate event handler binding
                 },
-                SlotType::Ref => {
-                    self.add_import("use");
-                    // TODO: Generate ref binding
-                },
-                SlotType::ClassList => {
-                    self.add_import("classList");
-                    // TODO: Generate classList binding
-                },
-                SlotType::StyleObject => {
-                    self.add_import("style");
-                    // TODO: Generate style binding
-                },
-                SlotType::OnEvent(_) | SlotType::OnCaptureEvent(_) => {
-                    self.add_import("addEventListener");
-                    // TODO: Generate addEventListener call
-                },
+                _ => {
+                    // Other slot types not yet implemented
+                    // TODO: Implement attribute, event, ref, classList, style bindings
+                }
             }
         }
         
-        // For now, return empty statements
-        // The full implementation would need to extract expressions from JSX
-        // and generate the appropriate calls
-        let _ = (jsx_elem, root_var); // Silence unused warnings
-        
         stmts
+    }
+    
+    /// Extract all dynamic expressions from JSX element in order (cloning them)
+    fn extract_expressions_from_jsx(&self, jsx_elem: &JSXElement<'a>, expressions: &mut Vec<Expression<'a>>) {
+        // Walk through children and extract expressions
+        for child in &jsx_elem.children {
+            self.extract_expressions_from_child(child, expressions);
+        }
+    }
+    
+    /// Extract expressions from a JSX child (cloning them)
+    fn extract_expressions_from_child(&self, child: &JSXChild<'a>, expressions: &mut Vec<Expression<'a>>) {
+        use oxc_allocator::CloneIn;
+        
+        match child {
+            JSXChild::Element(elem) => {
+                // Recursively extract from nested elements
+                self.extract_expressions_from_jsx(elem, expressions);
+            }
+            JSXChild::ExpressionContainer(container) => {
+                match &container.expression {
+                    JSXExpression::StringLiteral(_) |
+                    JSXExpression::NumericLiteral(_) |
+                    JSXExpression::EmptyExpression(_) => {
+                        // Static or empty - skip (already in template)
+                    }
+                    // All other JSXExpression variants are dynamic expressions
+                    // JSXExpression inherits from Expression via macro
+                    expr => {
+                        // Convert JSXExpression to Expression and clone it
+                        if let Some(expr_ref) = expr.as_expression() {
+                            expressions.push(expr_ref.clone_in(self.allocator));
+                        }
+                    }
+                }
+            }
+            JSXChild::Text(_) => {
+                // Static text - skip
+            }
+            JSXChild::Fragment(_) | JSXChild::Spread(_) => {
+                // Not implemented yet
+            }
+        }
+    }
+    
+    /// Create an insert call statement
+    fn create_insert_call(&self, element_var: &str, expr: &Expression<'a>) -> Option<Statement<'a>> {
+        use oxc_ast::ast::*;
+        use oxc_allocator::CloneIn;
+        
+        // Create call to _$insert(element, expression, null)
+        let insert_fn = IdentifierReference {
+            span: SPAN,
+            name: Atom::from("_$insert"),
+            reference_id: None.into(),
+        };
+        
+        // First argument: element reference
+        let elem_arg = Argument::Identifier(Box::new_in(
+            IdentifierReference {
+                span: SPAN,
+                name: Atom::from(self.allocator.alloc_str(element_var)),
+                reference_id: None.into(),
+            },
+            self.allocator,
+        ));
+        
+        // Second argument: the expression (clone it)
+        let expr_arg = Argument::from(expr.clone_in(self.allocator));
+        
+        // Third argument: null (marker position)
+        let null_arg = Argument::NullLiteral(Box::new_in(
+            NullLiteral { span: SPAN },
+            self.allocator,
+        ));
+        
+        let mut args = OxcVec::new_in(self.allocator);
+        args.push(elem_arg);
+        args.push(expr_arg);
+        args.push(null_arg);
+        
+        let call_expr = CallExpression {
+            span: SPAN,
+            callee: Expression::Identifier(Box::new_in(insert_fn, self.allocator)),
+            arguments: args,
+            optional: false,
+            type_arguments: None,
+            pure: false,
+        };
+        
+        Some(Statement::ExpressionStatement(
+            Box::new_in(
+                ExpressionStatement {
+                    span: SPAN,
+                    expression: Expression::CallExpression(Box::new_in(call_expr, self.allocator)),
+                },
+                self.allocator,
+            )
+        ))
     }
     
     /// Create return statement
@@ -807,44 +891,66 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
 
     fn exit_expression(&mut self, expr: &mut Expression<'a>, _ctx: &mut TraverseCtx<'a, ()>) {
         // Replace JSX elements with template calls or IIFEs
-        match expr {
-            Expression::JSXElement(jsx_elem) => {
-                // Check if this is a component
-                let tag_name = match &jsx_elem.opening_element.name {
-                    JSXElementName::Identifier(ident) => ident.name.as_str(),
-                    JSXElementName::IdentifierReference(ident) => ident.name.as_str(),
-                    _ => return, // Skip complex element names
-                };
-
-                if is_component(tag_name) {
-                    // Don't transform components
-                    return;
-                }
-
-                // Build template and get the template variable
-                let template = crate::template::build_template_with_options(jsx_elem.as_ref(), Some(&self.options));
-                let template_var = self.get_template_var(&template.html);
-                
-                // Check if this template has dynamic content
-                let has_dynamic_content = !template.dynamic_slots.is_empty();
-                
-                if has_dynamic_content {
-                    // Generate an IIFE with dynamic binding code
-                    let iife = self.create_template_iife(jsx_elem.as_ref(), &template, &template_var);
-                    *expr = Expression::CallExpression(iife);
-                } else {
-                    // Simple template call for static content
-                    let template_var_str = self.allocator.alloc_str(&template_var);
-                    let call_expr = self.create_template_call(template_var_str);
-                    *expr = Expression::CallExpression(call_expr);
-                }
-            }
-            Expression::JSXFragment(_) => {
+        // We need to use mem::replace to avoid borrow checker issues
+        use std::mem;
+        use oxc_ast::ast::*;
+        
+        // First check if this is a JSX element
+        let is_jsx_elem = matches!(expr, Expression::JSXElement(_));
+        if !is_jsx_elem {
+            // Check for fragments
+            if matches!(expr, Expression::JSXFragment(_)) {
                 // Handle fragments
                 // For now, just leave them as-is
                 // In a full implementation, fragments would be converted to arrays
             }
-            _ => {}
+            return;
+        }
+        
+        // Temporarily replace with null to get ownership
+        let placeholder = Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator));
+        let jsx_expr = mem::replace(expr, placeholder);
+        
+        // Now we have ownership of the JSX element
+        if let Expression::JSXElement(jsx_elem) = jsx_expr {
+            // Check if this is a component
+            let tag_name = match &jsx_elem.opening_element.name {
+                JSXElementName::Identifier(ident) => ident.name.as_str(),
+                JSXElementName::IdentifierReference(ident) => ident.name.as_str(),
+                _ => {
+                    // Restore the expression and return
+                    *expr = Expression::JSXElement(jsx_elem);
+                    return;
+                }
+            };
+
+            if is_component(tag_name) {
+                // Don't transform components - restore the expression
+                *expr = Expression::JSXElement(jsx_elem);
+                return;
+            }
+
+            // Build template and get the template variable
+            let template = crate::template::build_template_with_options(&jsx_elem, Some(&self.options));
+            let template_var = self.get_template_var(&template.html);
+            
+            // Check if this template has dynamic content
+            let has_dynamic_content = !template.dynamic_slots.is_empty();
+            
+            if has_dynamic_content {
+                // Extract expressions before we lose the JSX element
+                let mut expressions = Vec::new();
+                self.extract_expressions_from_jsx(&jsx_elem, &mut expressions);
+                
+                // Generate an IIFE with dynamic binding code
+                let iife = self.create_template_iife_from_expressions(expressions, &template, &template_var);
+                *expr = Expression::CallExpression(iife);
+            } else {
+                // Simple template call for static content
+                let template_var_str = self.allocator.alloc_str(&template_var);
+                let call_expr = self.create_template_call(template_var_str);
+                *expr = Expression::CallExpression(call_expr);
+            }
         }
     }
 }
