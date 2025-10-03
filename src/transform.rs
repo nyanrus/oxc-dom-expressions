@@ -25,8 +25,8 @@ pub struct DomExpressions<'a> {
     template_counter: usize,
     /// Counter for generating unique element variable names
     element_counter: usize,
-    /// Set of required imports
-    required_imports: HashSet<String>,
+    /// List of required imports (maintains insertion order)
+    required_imports: Vec<String>,
     /// Set of events that need delegation
     delegated_events: HashSet<String>,
     /// Optimizer for template analysis
@@ -43,7 +43,7 @@ impl<'a> DomExpressions<'a> {
             template_map: HashMap::new(),
             template_counter: 0,
             element_counter: 0,
-            required_imports: HashSet::new(),
+            required_imports: Vec::new(),
             delegated_events: HashSet::new(),
             optimizer: TemplateOptimizer::new(),
         }
@@ -87,7 +87,9 @@ impl<'a> DomExpressions<'a> {
 
     /// Add a required import
     fn add_import(&mut self, name: &str) {
-        self.required_imports.insert(name.to_string());
+        if !self.required_imports.contains(&name.to_string()) {
+            self.required_imports.push(name.to_string());
+        }
     }
 
     /// Add an event for delegation
@@ -482,18 +484,15 @@ impl<'a> DomExpressions<'a> {
         )
     }
 
-    /// Create import statement for runtime functions
-    fn create_import_statement(&self) -> Option<Statement<'a>> {
+    /// Create import statements for runtime functions (one per import)
+    fn create_import_statements(&self) -> Vec<Statement<'a>> {
         use oxc_ast::ast::*;
         
-        // Create import specifiers for each required import
-        let mut specifiers = OxcVec::new_in(self.allocator);
+        let mut statements = Vec::new();
         
-        // Sort imports for consistency
-        let mut sorted_imports: Vec<_> = self.required_imports.iter().collect();
-        sorted_imports.sort();
-        
-        for import_name in sorted_imports {
+        // Create separate import statement for each required import
+        // Don't sort - maintain insertion order for deterministic output
+        for import_name in &self.required_imports {
             // Create local binding name (e.g., _$template for template)
             let local_name = format!("_${}", import_name);
             let local = BindingIdentifier {
@@ -521,33 +520,36 @@ impl<'a> DomExpressions<'a> {
                 )
             );
             
+            let mut specifiers = OxcVec::new_in(self.allocator);
             specifiers.push(specifier);
+            
+            // Create source string
+            let source = StringLiteral {
+                span: SPAN,
+                value: Atom::from(self.allocator.alloc_str(&self.options.module_name)),
+                raw: None,
+                lone_surrogates: false,
+            };
+            
+            // Create import declaration
+            let import_decl = ImportDeclaration {
+                span: SPAN,
+                specifiers: Some(specifiers),
+                source,
+                with_clause: None,
+                import_kind: ImportOrExportKind::Value,
+                phase: None,
+            };
+            
+            // Wrap in ModuleDeclaration and Statement
+            let module_decl = ModuleDeclaration::ImportDeclaration(
+                Box::new_in(import_decl, self.allocator)
+            );
+            
+            statements.push(Statement::from(module_decl));
         }
         
-        // Create source string
-        let source = StringLiteral {
-            span: SPAN,
-            value: Atom::from(self.allocator.alloc_str(&self.options.module_name)),
-            raw: None,
-            lone_surrogates: false,
-        };
-        
-        // Create import declaration
-        let import_decl = ImportDeclaration {
-            span: SPAN,
-            specifiers: Some(specifiers),
-            source,
-            with_clause: None,
-            import_kind: ImportOrExportKind::Value,
-            phase: None, // No phase for regular imports
-        };
-        
-        // Wrap in ModuleDeclaration and Statement
-        let module_decl = ModuleDeclaration::ImportDeclaration(
-            Box::new_in(import_decl, self.allocator)
-        );
-        
-        Some(Statement::from(module_decl))
+        statements
     }
 
     /// Create template variable declarations
@@ -561,9 +563,21 @@ impl<'a> DomExpressions<'a> {
         // Create variable declarators for all templates
         let mut declarators = OxcVec::new_in(self.allocator);
         
-        // Sort template map by variable name to get consistent order
+        // Sort template map by variable name to get consistent order (_tmpl$, _tmpl$2, _tmpl$3, ...)
         let mut sorted_templates: Vec<_> = self.template_map.iter().collect();
-        sorted_templates.sort_by(|a, b| a.1.cmp(b.1));
+        sorted_templates.sort_by(|a, b| {
+            // Sort by numeric suffix in variable name
+            let get_num = |s: &str| -> usize {
+                if s == "_tmpl$" {
+                    0
+                } else if let Some(suffix) = s.strip_prefix("_tmpl$") {
+                    suffix.parse().unwrap_or(0)
+                } else {
+                    0
+                }
+            };
+            get_num(a.1).cmp(&get_num(b.1))
+        });
         
         for (html, var_name) in sorted_templates {
             // Create the binding pattern for the variable
@@ -737,11 +751,9 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
         // Build the list of statements to inject at the beginning
         let mut new_stmts = Vec::new();
         
-        // 1. Add import statement
+        // 1. Add import statements (one per import)
         if !self.required_imports.is_empty() {
-            if let Some(import_stmt) = self.create_import_statement() {
-                new_stmts.push(import_stmt);
-            }
+            new_stmts.extend(self.create_import_statements());
         }
         
         // 2. Add template declarations

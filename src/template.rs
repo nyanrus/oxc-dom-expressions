@@ -200,14 +200,15 @@ fn build_child_html(
             // Only escape opening braces to match babel plugin behavior
             let text_value = text.value.as_str();
             
-            // Skip pure formatting whitespace (newlines + indentation)
-            // BUT preserve inline spaces (e.g., between expressions)
+            // Skip pure formatting whitespace (newlines + indentation only)
+            // BUT preserve inline spaces (e.g., between expressions or text content)
             if text_value.trim().is_empty() && text_value.contains('\n') {
                 // This is formatting whitespace with newlines - skip it
                 return;
             }
             
-            // Preserve all other text, including spaces
+            // Preserve all text content, including leading/trailing spaces
+            // No trimming - this matches babel plugin behavior
             let escaped = text_value
                 .replace('\\', "\\\\")
                 .replace('{', "\\{");

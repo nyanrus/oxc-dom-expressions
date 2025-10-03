@@ -47,14 +47,8 @@ pub fn parse(html: &str) -> Vec<HtmlNode> {
 
 /// Parse a single HTML node
 fn parse_node(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<HtmlNode> {
-    // Skip whitespace between tags
-    while let Some(&ch) = chars.peek() {
-        if ch.is_whitespace() {
-            chars.next();
-        } else {
-            break;
-        }
-    }
+    // Don't skip whitespace - preserve it as text nodes
+    // The template.rs already handles formatting whitespace removal
     
     if chars.peek() == Some(&'<') {
         chars.next(); // consume '<'
