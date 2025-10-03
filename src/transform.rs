@@ -1074,7 +1074,7 @@ impl<'a> DomExpressions<'a> {
     }
 
     /// Create props object for a component
-    fn create_component_props(&self, jsx_elem: &JSXElement<'a>) -> ObjectExpression<'a> {
+    fn create_component_props(&mut self, jsx_elem: &JSXElement<'a>) -> ObjectExpression<'a> {
         use oxc_ast::ast::*;
 
         let mut properties = OxcVec::new_in(self.allocator);
@@ -1193,7 +1193,7 @@ impl<'a> DomExpressions<'a> {
     }
 
     /// Create children value for a component (can be a single value or array)
-    fn create_component_children(&self, children: &OxcVec<'a, JSXChild<'a>>) -> Expression<'a> {
+    fn create_component_children(&mut self, children: &OxcVec<'a, JSXChild<'a>>) -> Expression<'a> {
         use oxc_ast::ast::*;
 
         // Filter out whitespace-only text nodes
@@ -1226,8 +1226,9 @@ impl<'a> DomExpressions<'a> {
     }
 
     /// Convert a JSX child to an expression
-    fn jsx_child_to_expression(&self, child: &JSXChild<'a>) -> Expression<'a> {
+    fn jsx_child_to_expression(&mut self, child: &JSXChild<'a>) -> Expression<'a> {
         use oxc_ast::ast::*;
+        use oxc_allocator::CloneIn;
 
         match child {
             JSXChild::Text(text) => Expression::StringLiteral(Box::new_in(
@@ -1247,26 +1248,62 @@ impl<'a> DomExpressions<'a> {
                     Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator))
                 }
             },
-            JSXChild::Element(_elem) => {
-                // Transform JSX element - need to handle this recursively
-                // For now, create a call expression (elements should already be transformed in exit_expression)
-                // Return a null literal as a placeholder - the actual element should be transformed elsewhere
-                Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator))
+            JSXChild::Element(elem) => {
+                // Transform JSX element inline
+                // Check if this is a component
+                let tag_name = match &elem.opening_element.name {
+                    JSXElementName::Identifier(ident) => ident.name.as_str(),
+                    JSXElementName::IdentifierReference(ident) => ident.name.as_str(),
+                    _ => "",
+                };
+
+                if is_component(tag_name) {
+                    // Transform component - clone and box the element
+                    let elem_clone = elem.as_ref().clone_in(self.allocator);
+                    let boxed_elem = Box::new_in(elem_clone, self.allocator);
+                    self.transform_component(boxed_elem)
+                } else {
+                    // Build template and transform element
+                    let template = crate::template::build_template_with_options(elem, Some(&self.options));
+                    let template_var = self.get_template_var(&template.html);
+                    
+                    let has_dynamic_content = !template.dynamic_slots.is_empty();
+                    
+                    if has_dynamic_content {
+                        // Extract expressions from the element
+                        let mut expressions = Vec::new();
+                        self.extract_expressions_from_jsx(elem, &mut expressions);
+                        
+                        // Generate IIFE with dynamic binding code
+                        let iife = self.create_template_iife_from_expressions(
+                            expressions,
+                            &template,
+                            &template_var,
+                        );
+                        Expression::CallExpression(iife)
+                    } else {
+                        // Simple template call for static content
+                        let template_var_str = self.allocator.alloc_str(&template_var);
+                        let call_expr = self.create_template_call(template_var_str);
+                        Expression::CallExpression(call_expr)
+                    }
+                }
             }
-            JSXChild::Fragment(_frag) => {
-                // Transform JSX fragment
-                // Return a null literal as a placeholder - the actual fragment should be transformed elsewhere
-                Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator))
+            JSXChild::Fragment(frag) => {
+                // Transform JSX fragment inline - clone and box the fragment
+                let frag_clone = frag.as_ref().clone_in(self.allocator);
+                let boxed_frag = Box::new_in(frag_clone, self.allocator);
+                self.transform_fragment(boxed_frag)
             }
             _ => {
-                // For other types, return null for now
+                // For other types (Spread), return null for now
                 Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator))
             }
         }
     }
 
     /// Transform a JSX fragment into an array or string
-    fn transform_fragment(&self, jsx_frag: Box<'a, JSXFragment<'a>>) -> Expression<'a> {
+    fn transform_fragment(&mut self, jsx_frag: Box<'a, JSXFragment<'a>>) -> Expression<'a> {
         use oxc_ast::ast::*;
 
         // Filter out whitespace-only text nodes
