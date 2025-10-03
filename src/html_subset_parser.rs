@@ -49,14 +49,7 @@ pub fn parse(html: &str) -> Vec<HtmlNode> {
 
 /// Parse a single HTML node
 fn parse_node(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<HtmlNode> {
-    // Skip whitespace between tags
-    while let Some(&ch) = chars.peek() {
-        if ch.is_whitespace() {
-            chars.next();
-        } else {
-            break;
-        }
-    }
+    // Don't skip whitespace - check what we have first
     
     if chars.peek() == Some(&'<') {
         chars.next(); // consume '<'
@@ -187,14 +180,8 @@ fn parse_node(chars: &mut std::iter::Peekable<std::str::Chars>) -> Option<HtmlNo
         let mut children = Vec::new();
         if !is_void && !self_closing {
             loop {
-                // Skip whitespace  
-                while let Some(&ch) = chars.peek() {
-                    if ch.is_whitespace() {
-                        chars.next();
-                    } else {
-                        break;
-                    }
-                }
+                // Don't skip whitespace - it may be meaningful text content!
+                // Only check for what comes next
                 
                 // Check for closing tag by looking ahead
                 if chars.peek() == Some(&'<') {

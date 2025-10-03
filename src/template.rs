@@ -266,16 +266,12 @@ fn build_child_html_with_context(
                 }
                 _ => {}
             }
-            // Dynamic content - add marker only if:
-            // 1. This is not the last child AND
-            // 2. The next child is also an expression (no static content to use as marker)
-            let marker_path = if !is_last_child && next_is_expression {
+            
+            // Dynamic content - add marker if not the last child
+            // The marker helps position where to insert the dynamic content
+            let marker_path = if !is_last_child {
                 html.push_str("<!>");
                 // The marker we just added is at the current path
-                Some(path.clone())
-            } else if !is_last_child {
-                // Next child is static content (text or element) - use it as marker
-                // The next child will be at the current path (since this expression doesn't add a DOM node)
                 Some(path.clone())
             } else {
                 // No marker for trailing expressions
