@@ -197,22 +197,63 @@ fn build_child_html(
     match child {
         JSXChild::Text(text) => {
             // Static text - escape for template literals
-            // Only escape opening braces to match babel plugin behavior
+            // Apply JSX whitespace normalization rules (matching React/Solid behavior)
             let text_value = text.value.as_str();
             
-            // Skip pure formatting whitespace (newlines + indentation only)
-            // BUT preserve inline spaces (e.g., between expressions or text content)
-            if text_value.trim().is_empty() && text_value.contains('\n') {
-                // This is formatting whitespace with newlines - skip it
-                return;
+            // JSX whitespace normalization rules:
+            // 1. If text contains ONLY whitespace with newlines, skip it
+            // 2. Otherwise, collapse consecutive whitespace (including newlines) to single space
+            // 3. Trim leading/trailing whitespace if it contains newlines
+            
+            if text_value.trim().is_empty() {
+                // Pure whitespace - skip if it contains newlines
+                if text_value.contains('\n') {
+                    return;
+                }
+                // Otherwise it's intentional space - preserve it
             }
             
-            // Preserve all text content, including leading/trailing spaces
-            // No trimming - this matches babel plugin behavior
-            let escaped = text_value
-                .replace('\\', "\\\\")
-                .replace('{', "\\{");
-            html.push_str(&escaped);
+            let normalized = if text_value.contains('\n') {
+                // Text with newlines - apply normalization
+                let mut result = text_value.to_string();
+                
+                // Trim leading whitespace if first char is newline
+                if result.starts_with('\n') || result.starts_with("\r\n") {
+                    result = result.trim_start().to_string();
+                }
+                
+                // Trim trailing whitespace if last char is newline  
+                if result.ends_with('\n') || result.ends_with("\r\n") {
+                    result = result.trim_end().to_string();
+                }
+                
+                // Collapse consecutive whitespace (including newlines) to single space
+                let mut prev_was_space = false;
+                let mut collapsed = String::new();
+                for ch in result.chars() {
+                    if ch.is_whitespace() {
+                        if !prev_was_space {
+                            collapsed.push(' ');
+                            prev_was_space = true;
+                        }
+                    } else {
+                        collapsed.push(ch);
+                        prev_was_space = false;
+                    }
+                }
+                collapsed
+            } else {
+                // No newlines - preserve as-is (includes intentional spaces)
+                text_value.to_string()
+            };
+            
+            if !normalized.is_empty() {
+                // Only escape opening braces to match babel plugin behavior
+                let escaped = normalized
+                    .replace('\\', "\\\\")
+                    .replace('{', "\\{");
+                html.push_str(&escaped);
+            }
         }
         JSXChild::Element(elem) => {
             build_element_html(elem, html, slots, path);
