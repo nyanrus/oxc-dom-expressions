@@ -951,6 +951,17 @@ impl<'a> DomExpressions<'a> {
                     }
                 }
             }
+            JSXChild::Element(elem) => {
+                // Transform JSX element - need to handle this recursively
+                // For now, create a call expression (elements should already be transformed in exit_expression)
+                // Return a null literal as a placeholder - the actual element should be transformed elsewhere
+                Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator))
+            }
+            JSXChild::Fragment(frag) => {
+                // Transform JSX fragment
+                // Return a null literal as a placeholder - the actual fragment should be transformed elsewhere
+                Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator))
+            }
             _ => {
                 // For other types, return null for now
                 Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator))
