@@ -825,9 +825,20 @@ impl<'a> DomExpressions<'a> {
                 SlotType::Spread => {
                     // Spread attributes - generate _$spread call
                     self.add_import("spread");
-                    // TODO: Implement spread attribute handling
-                    // For now, just consume the expression
+                    
                     if expr_index < expressions.len() {
+                        let element_var = if slot.path.is_empty() {
+                            root_var
+                        } else {
+                            path_to_var
+                                .get(&slot.path)
+                                .map(|s| s.as_str())
+                                .unwrap_or(root_var)
+                        };
+
+                        if let Some(stmt) = self.create_spread_call(element_var, &expressions[expr_index]) {
+                            stmts.push(stmt);
+                        }
                         expr_index += 1;
                     }
                 }
@@ -1949,7 +1960,8 @@ impl<'a> DomExpressions<'a> {
 
         let mut statements = Vec::new();
 
-        // Define import priority order (lower number = higher priority)
+        // Define import priority order to match babel plugin output
+        // This ordering is based on the fixture test expectations
         let get_priority = |name: &str| -> usize {
             match name {
                 "template" => 0,
@@ -1957,27 +1969,28 @@ impl<'a> DomExpressions<'a> {
                 "delegateEvents" => 1,
                 "createComponent" => 2,
                 "memo" => 3,
-                "For" => 4,
-                "Show" => 5,
-                "Suspense" => 6,
-                "SuspenseList" => 7,
-                "Switch" => 8,
-                "Match" => 9,
-                "Index" => 10,
-                "ErrorBoundary" => 11,
-                "mergeProps" => 12,
-                "spread" => 13,
-                "use" => 14,
-                "insert" => 15,
-                "setAttribute" => 16,
-                "setAttributeNS" => 17,
-                "setBoolAttribute" => 18,
-                "className" => 19,
-                "style" => 20,
-                "setStyleProperty" => 21,
-                "addEventListener" => 22,
-                "effect" => 23,
-                "getOwner" => 24,
+                "addEventListener" => 4,
+                "insert" => 5,
+                "setAttribute" => 6,
+                "setBoolAttribute" => 7,
+                "className" => 8,
+                "style" => 9,
+                "setStyleProperty" => 10,
+                "effect" => 11,
+                "classList" => 12,
+                "use" => 13,
+                "spread" => 14,
+                "mergeProps" => 15,
+                "For" => 20,
+                "Show" => 21,
+                "Suspense" => 22,
+                "SuspenseList" => 23,
+                "Switch" => 24,
+                "Match" => 25,
+                "Index" => 26,
+                "ErrorBoundary" => 27,
+                "setAttributeNS" => 28,
+                "getOwner" => 29,
                 _ => 100, // Unknown imports go last
             }
         };
@@ -2214,6 +2227,75 @@ impl<'a> DomExpressions<'a> {
             ExpressionStatement {
                 span: SPAN,
                 expression: Expression::CallExpression(Box::new_in(call_expr, self.allocator)),
+            },
+            self.allocator,
+        )))
+    }
+
+    /// Create a spread call: _$spread(element, props, false, true)
+    fn create_spread_call(
+        &self,
+        element_var: &str,
+        spread_expr: &Expression<'a>,
+    ) -> Option<Statement<'a>> {
+        use oxc_allocator::CloneIn;
+        use oxc_ast::ast::*;
+
+        // Create: _$spread(element, props, false, true)
+        let spread_id = IdentifierReference {
+            span: SPAN,
+            name: Atom::from("_$spread"),
+            reference_id: None.into(),
+        };
+
+        let element_ref = IdentifierReference {
+            span: SPAN,
+            name: Atom::from(self.allocator.alloc_str(element_var)),
+            reference_id: None.into(),
+        };
+
+        let mut args = OxcVec::new_in(self.allocator);
+
+        // Arg 1: element reference
+        args.push(Argument::from(Expression::Identifier(Box::new_in(
+            element_ref,
+            self.allocator,
+        ))));
+
+        // Arg 2: spread expression
+        args.push(Argument::from(spread_expr.clone_in(self.allocator)));
+
+        // Arg 3: false (prevProps)
+        args.push(Argument::from(Expression::BooleanLiteral(Box::new_in(
+            BooleanLiteral {
+                span: SPAN,
+                value: false,
+            },
+            self.allocator,
+        ))));
+
+        // Arg 4: true (merge)
+        args.push(Argument::from(Expression::BooleanLiteral(Box::new_in(
+            BooleanLiteral {
+                span: SPAN,
+                value: true,
+            },
+            self.allocator,
+        ))));
+
+        let call = CallExpression {
+            span: SPAN,
+            callee: Expression::Identifier(Box::new_in(spread_id, self.allocator)),
+            arguments: args,
+            optional: false,
+            type_arguments: None,
+            pure: false,
+        };
+
+        Some(Statement::ExpressionStatement(Box::new_in(
+            ExpressionStatement {
+                span: SPAN,
+                expression: Expression::CallExpression(Box::new_in(call, self.allocator)),
             },
             self.allocator,
         )))
