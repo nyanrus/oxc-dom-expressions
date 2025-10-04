@@ -47,8 +47,10 @@ use oxc_ast::ast::*;
 use std::fmt::Write;
 
 use crate::utils::{
-    get_event_name, get_prefix_event_name, is_class_list_binding, is_event_handler,
-    is_on_capture_event, is_on_prefix_event, is_ref_binding, is_style_binding, is_void_element,
+    get_event_name, get_prefix_event_name, get_prefixed_name, is_attr_attribute,
+    is_bool_attribute, is_class_list_binding, is_class_name_binding, is_event_handler,
+    is_on_capture_event, is_on_prefix_event, is_prop_attribute, is_ref_binding,
+    is_style_binding, is_style_property, is_use_directive, is_void_element,
 };
 
 /// Represents a template with its HTML string and dynamic expression positions
@@ -91,6 +93,18 @@ pub enum SlotType {
     OnEvent(String),
     /// Capture event (oncapture: prefix)
     OnCaptureEvent(String),
+    /// Boolean attribute (bool: prefix)
+    BoolAttribute(String),
+    /// Property attribute (prop: prefix)
+    PropAttribute(String),
+    /// Attribute attribute (attr: prefix)
+    AttrAttribute(String),
+    /// Use directive (use: prefix)
+    UseDirective(String),
+    /// Style property (style: prefix)
+    StyleProperty(String),
+    /// Class name binding (class: prefix)
+    ClassName(String),
 }
 
 /// Build a template from a JSX element
@@ -185,6 +199,60 @@ fn build_element_html(
                         slots.push(DynamicSlot {
                             path: path.clone(),
                             slot_type: SlotType::OnCaptureEvent(event_name.to_string()),
+                            marker_path: None,
+                        });
+                    }
+                } else if is_bool_attribute(&name) {
+                    // bool: prefix attribute
+                    if let Some(attr_name) = get_prefixed_name(&name) {
+                        slots.push(DynamicSlot {
+                            path: path.clone(),
+                            slot_type: SlotType::BoolAttribute(attr_name.to_string()),
+                            marker_path: None,
+                        });
+                    }
+                } else if is_prop_attribute(&name) {
+                    // prop: prefix attribute
+                    if let Some(attr_name) = get_prefixed_name(&name) {
+                        slots.push(DynamicSlot {
+                            path: path.clone(),
+                            slot_type: SlotType::PropAttribute(attr_name.to_string()),
+                            marker_path: None,
+                        });
+                    }
+                } else if is_attr_attribute(&name) {
+                    // attr: prefix attribute
+                    if let Some(attr_name) = get_prefixed_name(&name) {
+                        slots.push(DynamicSlot {
+                            path: path.clone(),
+                            slot_type: SlotType::AttrAttribute(attr_name.to_string()),
+                            marker_path: None,
+                        });
+                    }
+                } else if is_use_directive(&name) {
+                    // use: prefix directive
+                    if let Some(directive_name) = get_prefixed_name(&name) {
+                        slots.push(DynamicSlot {
+                            path: path.clone(),
+                            slot_type: SlotType::UseDirective(directive_name.to_string()),
+                            marker_path: None,
+                        });
+                    }
+                } else if is_style_property(&name) {
+                    // style: prefix property
+                    if let Some(prop_name) = get_prefixed_name(&name) {
+                        slots.push(DynamicSlot {
+                            path: path.clone(),
+                            slot_type: SlotType::StyleProperty(prop_name.to_string()),
+                            marker_path: None,
+                        });
+                    }
+                } else if is_class_name_binding(&name) {
+                    // class: prefix binding
+                    if let Some(class_name) = get_prefixed_name(&name) {
+                        slots.push(DynamicSlot {
+                            path: path.clone(),
+                            slot_type: SlotType::ClassName(class_name.to_string()),
                             marker_path: None,
                         });
                     }

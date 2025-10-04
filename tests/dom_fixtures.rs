@@ -64,6 +64,9 @@ fn normalize_output(code: &str) -> String {
 
     // Replace /* @__PURE__ */ with /*#__PURE__*/
     result = result.replace("/* @__PURE__ */", "/*#__PURE__*/");
+    
+    // Replace tabs with double spaces to match babel output
+    result = result.replace('\t', "  ");
 
     // Format multi-line variable declarations
     // Replace all instances of ", _tmpl$" with ",\n  _tmpl$" in the entire code
@@ -137,14 +140,19 @@ fn normalize_for_comparison(code: &str) -> String {
 
     // Remove all newlines and carriage returns
     result = result.replace('\n', "").replace('\r', "");
+    
+    // Remove all tabs
+    result = result.replace('\t', "");
 
     // Remove all indentation spaces (multiple spaces in a row)
     while result.contains("  ") {
         result = result.replace("  ", " ");
     }
 
-    // Remove spaces after opening parens and before closing parens
+    // Remove spaces after opening brackets/parens and before closing brackets/parens
     result = result.replace("( ", "(").replace(" )", ")");
+    result = result.replace("[ ", "[").replace(" ]", "]");
+    result = result.replace("{ ", "{").replace(" }", "}");
 
     result
 }
