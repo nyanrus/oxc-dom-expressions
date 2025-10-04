@@ -1,5 +1,7 @@
 //! Utility functions for the DOM expressions transformer
 
+use oxc_ast::ast::*;
+
 /// Check if a tag name is a lowercase HTML element
 #[allow(dead_code)] // Used by full implementation
 pub fn is_html_element(tag_name: &str) -> bool {
@@ -178,6 +180,99 @@ pub fn is_void_element(tag_name: &str) -> bool {
             | "track"
             | "wbr"
     )
+}
+
+/// Check if an expression contains only static/literal values
+/// Returns true for literals (strings, numbers, booleans, null), false for anything else
+pub fn is_static_expression(expr: &Expression) -> bool {
+    match expr {
+        Expression::StringLiteral(_)
+        | Expression::NumericLiteral(_)
+        | Expression::BooleanLiteral(_)
+        | Expression::NullLiteral(_)
+        | Expression::BigIntLiteral(_) => true,
+        Expression::UnaryExpression(unary) => {
+            // Allow unary operators on literals (e.g., -5, !true)
+            is_static_expression(&unary.argument)
+        }
+        Expression::ArrayExpression(array) => {
+            // All elements must be static
+            array.elements.iter().all(|elem| match elem {
+                ArrayExpressionElement::SpreadElement(_) => false,
+                ArrayExpressionElement::Elision(_) => true,
+                _ => {
+                    if let Some(expr) = elem.as_expression() {
+                        is_static_expression(expr)
+                    } else {
+                        false
+                    }
+                }
+            })
+        }
+        Expression::ObjectExpression(obj) => {
+            // All properties must have static values
+            obj.properties.iter().all(|prop| match prop {
+                ObjectPropertyKind::ObjectProperty(p) => is_static_expression(&p.value),
+                ObjectPropertyKind::SpreadProperty(_) => false,
+            })
+        }
+        _ => false,
+    }
+}
+
+/// Check if a JSX attribute value is fully static
+pub fn is_static_jsx_attribute_value(value: &JSXAttributeValue) -> bool {
+    match value {
+        JSXAttributeValue::StringLiteral(_) => true,
+        JSXAttributeValue::ExpressionContainer(container) => {
+            if let Some(expr) = container.expression.as_expression() {
+                is_static_expression(expr)
+            } else {
+                false
+            }
+        }
+        _ => false,
+    }
+}
+
+/// Convert a static style object expression to a CSS string
+/// Example: {"background": "red", "color": "green", "border": null} => "background:red;color:green"
+pub fn static_style_object_to_css(expr: &Expression) -> Option<String> {
+    if let Expression::ObjectExpression(obj) = expr {
+        let mut css_parts = Vec::new();
+        
+        for prop in &obj.properties {
+            if let ObjectPropertyKind::ObjectProperty(p) = prop {
+                // Get property name
+                let prop_name = match &p.key {
+                    PropertyKey::StaticIdentifier(ident) => ident.name.as_str(),
+                    PropertyKey::StringLiteral(lit) => lit.value.as_str(),
+                    _ => continue,
+                };
+                
+                // Get property value - skip if null or undefined
+                let prop_value = match &p.value {
+                    Expression::StringLiteral(lit) => lit.value.as_str(),
+                    Expression::NumericLiteral(_lit) => {
+                        // Convert number to string
+                        return None; // For now, skip - we'd need allocator to create string
+                    }
+                    Expression::NullLiteral(_) => continue, // Skip null values
+                    _ => continue, // Skip non-static values
+                };
+                
+                css_parts.push(format!("{}:{}", prop_name, prop_value));
+            }
+        }
+        
+        if css_parts.is_empty() {
+            None
+        } else {
+            Some(css_parts.join(";"))
+        }
+    } else {
+        None
+    }
 }
 
 /// Decode HTML entities to their Unicode equivalents

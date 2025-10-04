@@ -105,6 +105,8 @@ pub enum SlotType {
     StyleProperty(String),
     /// Class name binding (class: prefix)
     ClassName(String),
+    /// Spread attribute {...props}
+    Spread,
 }
 
 /// Build a template from a JSX element
@@ -182,11 +184,28 @@ fn build_element_html(
                 } else if is_style_binding(&name) && attr.value.is_some() {
                     // Style object binding
                     if !matches!(attr.value, Some(JSXAttributeValue::StringLiteral(_))) {
-                        slots.push(DynamicSlot {
-                            path: path.clone(),
-                            slot_type: SlotType::StyleObject,
-                            marker_path: None,
-                        });
+                        // Check if the style object is fully static
+                        let is_fully_static = attr.value.as_ref()
+                            .map(|v| crate::utils::is_static_jsx_attribute_value(v))
+                            .unwrap_or(false);
+                        
+                        if is_fully_static {
+                            // Convert static style object to CSS string and add to HTML
+                            if let Some(JSXAttributeValue::ExpressionContainer(container)) = &attr.value {
+                                if let Some(expr) = container.expression.as_expression() {
+                                    if let Some(css) = crate::utils::static_style_object_to_css(expr) {
+                                        let _ = write!(html, " style={}", css);
+                                    }
+                                }
+                            }
+                        } else {
+                            // Only create a dynamic slot if there are dynamic values
+                            slots.push(DynamicSlot {
+                                path: path.clone(),
+                                slot_type: SlotType::StyleObject,
+                                marker_path: None,
+                            });
+                        }
                     } else if let Some(value) = &attr.value {
                         // Static style string
                         if let Some(static_value) = get_static_attribute_value(value) {

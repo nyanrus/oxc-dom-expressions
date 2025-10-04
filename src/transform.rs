@@ -690,9 +690,49 @@ impl<'a> DomExpressions<'a> {
                         expr_index += 1;
                     }
                 }
-                SlotType::UseDirective(_) | SlotType::ClassName(_) => {
-                    // These slot types not yet fully implemented
+                SlotType::UseDirective(directive_name) => {
+                    // Generate use directive call
                     if expr_index < expressions.len() {
+                        let element_var = if slot.path.is_empty() {
+                            root_var
+                        } else {
+                            path_to_var
+                                .get(&slot.path)
+                                .map(|s| s.as_str())
+                                .unwrap_or(root_var)
+                        };
+
+                        if let Some(stmt) = self.create_use_directive_call(
+                            element_var,
+                            directive_name,
+                            &expressions[expr_index],
+                        ) {
+                            stmts.push(stmt);
+                        }
+                        expr_index += 1;
+                    }
+                }
+                SlotType::ClassName(class_name) => {
+                    // Generate className call
+                    self.add_import("className");
+                    
+                    if expr_index < expressions.len() {
+                        let element_var = if slot.path.is_empty() {
+                            root_var
+                        } else {
+                            path_to_var
+                                .get(&slot.path)
+                                .map(|s| s.as_str())
+                                .unwrap_or(root_var)
+                        };
+
+                        if let Some(stmt) = self.create_class_name_call(
+                            element_var,
+                            class_name,
+                            &expressions[expr_index],
+                        ) {
+                            stmts.push(stmt);
+                        }
                         expr_index += 1;
                     }
                 }
@@ -721,18 +761,72 @@ impl<'a> DomExpressions<'a> {
                         expr_index += 1;
                     }
                 }
-                _ => {
-                    // Other slot types - for now, just consume the expression if there is one
-                    // TODO: Implement full handling for:
-                    // - Ref, ClassList, StyleObject
+                SlotType::Ref => {
+                    // Generate ref binding: _$use(ref, element) or conditional assignment
+                    self.add_import("use");
 
-                    // Most slot types consume an expression, but some don't
-                    let consumes_expression = matches!(
-                        &slot.slot_type,
-                        SlotType::Ref | SlotType::ClassList | SlotType::StyleObject
-                    );
+                    if expr_index < expressions.len() {
+                        let element_var = if slot.path.is_empty() {
+                            root_var
+                        } else {
+                            path_to_var
+                                .get(&slot.path)
+                                .map(|s| s.as_str())
+                                .unwrap_or(root_var)
+                        };
 
-                    if consumes_expression && expr_index < expressions.len() {
+                        if let Some(stmt) = self.create_ref_call(element_var, &expressions[expr_index]) {
+                            stmts.push(stmt);
+                        }
+                        expr_index += 1;
+                    }
+                }
+                SlotType::ClassList => {
+                    // Generate classList call: _$classList(element, {...})
+                    self.add_import("classList");
+
+                    if expr_index < expressions.len() {
+                        let element_var = if slot.path.is_empty() {
+                            root_var
+                        } else {
+                            path_to_var
+                                .get(&slot.path)
+                                .map(|s| s.as_str())
+                                .unwrap_or(root_var)
+                        };
+
+                        if let Some(stmt) = self.create_class_list_call(element_var, &expressions[expr_index]) {
+                            stmts.push(stmt);
+                        }
+                        expr_index += 1;
+                    }
+                }
+                SlotType::StyleObject => {
+                    // Generate style object call: _$style(element, {...})
+                    self.add_import("style");
+
+                    if expr_index < expressions.len() {
+                        let element_var = if slot.path.is_empty() {
+                            root_var
+                        } else {
+                            path_to_var
+                                .get(&slot.path)
+                                .map(|s| s.as_str())
+                                .unwrap_or(root_var)
+                        };
+
+                        if let Some(stmt) = self.create_style_object_call(element_var, &expressions[expr_index]) {
+                            stmts.push(stmt);
+                        }
+                        expr_index += 1;
+                    }
+                }
+                SlotType::Spread => {
+                    // Spread attributes - generate _$spread call
+                    self.add_import("spread");
+                    // TODO: Implement spread attribute handling
+                    // For now, just consume the expression
+                    if expr_index < expressions.len() {
                         expr_index += 1;
                     }
                 }
@@ -1593,6 +1687,7 @@ impl<'a> DomExpressions<'a> {
     }
 
     /// Create element.$$eventNameData = data;
+    #[allow(dead_code)]
     fn create_delegated_event_data(
         &self,
         element_var: &str,
@@ -1720,6 +1815,7 @@ impl<'a> DomExpressions<'a> {
     }
 
     /// Create wrapped event handler: element.addEventListener(event, e => handler(data, e))
+    #[allow(dead_code)]
     fn create_wrapped_event_handler(
         &self,
         element_var: &str,
@@ -2074,6 +2170,234 @@ impl<'a> DomExpressions<'a> {
     }
 
     /// Create delegateEvents call
+    /// Create a ref binding call: _$use(ref, element) or typeof ref === "function" ? _$use(ref, element) : (ref = element)
+    fn create_ref_call(
+        &self,
+        element_var: &str,
+        ref_expr: &Expression<'a>,
+    ) -> Option<Statement<'a>> {
+        use oxc_allocator::CloneIn;
+        use oxc_ast::ast::*;
+
+        // Need to add _$use import
+        // This will be handled by add_import call from the slot handler
+
+        // Create: _$use(ref, element)
+        let fn_name = IdentifierReference {
+            span: SPAN,
+            name: Atom::from("_$use"),
+            reference_id: None.into(),
+        };
+
+        let element_ref = IdentifierReference {
+            span: SPAN,
+            name: Atom::from(self.allocator.alloc_str(element_var)),
+            reference_id: None.into(),
+        };
+
+        let mut args = OxcVec::new_in(self.allocator);
+        args.push(Argument::from(ref_expr.clone_in(self.allocator)));
+        args.push(Argument::Identifier(Box::new_in(element_ref, self.allocator)));
+
+        let call_expr = CallExpression {
+            span: SPAN,
+            callee: Expression::Identifier(Box::new_in(fn_name, self.allocator)),
+            arguments: args,
+            optional: false,
+            type_arguments: None,
+            pure: false,
+        };
+
+        Some(Statement::ExpressionStatement(Box::new_in(
+            ExpressionStatement {
+                span: SPAN,
+                expression: Expression::CallExpression(Box::new_in(call_expr, self.allocator)),
+            },
+            self.allocator,
+        )))
+    }
+
+    /// Create a classList call: _$classList(element, classListObject)
+    fn create_class_list_call(
+        &self,
+        element_var: &str,
+        class_list_expr: &Expression<'a>,
+    ) -> Option<Statement<'a>> {
+        use oxc_allocator::CloneIn;
+        use oxc_ast::ast::*;
+
+        // Create: _$classList(element, classListObject)
+        let fn_name = IdentifierReference {
+            span: SPAN,
+            name: Atom::from("_$classList"),
+            reference_id: None.into(),
+        };
+
+        let element_ref = IdentifierReference {
+            span: SPAN,
+            name: Atom::from(self.allocator.alloc_str(element_var)),
+            reference_id: None.into(),
+        };
+
+        let mut args = OxcVec::new_in(self.allocator);
+        args.push(Argument::Identifier(Box::new_in(element_ref, self.allocator)));
+        args.push(Argument::from(class_list_expr.clone_in(self.allocator)));
+
+        let call_expr = CallExpression {
+            span: SPAN,
+            callee: Expression::Identifier(Box::new_in(fn_name, self.allocator)),
+            arguments: args,
+            optional: false,
+            type_arguments: None,
+            pure: false,
+        };
+
+        Some(Statement::ExpressionStatement(Box::new_in(
+            ExpressionStatement {
+                span: SPAN,
+                expression: Expression::CallExpression(Box::new_in(call_expr, self.allocator)),
+            },
+            self.allocator,
+        )))
+    }
+
+    /// Create a style object call: _$style(element, styleObject)
+    fn create_style_object_call(
+        &self,
+        element_var: &str,
+        style_expr: &Expression<'a>,
+    ) -> Option<Statement<'a>> {
+        use oxc_allocator::CloneIn;
+        use oxc_ast::ast::*;
+
+        // Create: _$style(element, styleObject)
+        let fn_name = IdentifierReference {
+            span: SPAN,
+            name: Atom::from("_$style"),
+            reference_id: None.into(),
+        };
+
+        let element_ref = IdentifierReference {
+            span: SPAN,
+            name: Atom::from(self.allocator.alloc_str(element_var)),
+            reference_id: None.into(),
+        };
+
+        let mut args = OxcVec::new_in(self.allocator);
+        args.push(Argument::Identifier(Box::new_in(element_ref, self.allocator)));
+        args.push(Argument::from(style_expr.clone_in(self.allocator)));
+
+        let call_expr = CallExpression {
+            span: SPAN,
+            callee: Expression::Identifier(Box::new_in(fn_name, self.allocator)),
+            arguments: args,
+            optional: false,
+            type_arguments: None,
+            pure: false,
+        };
+
+        Some(Statement::ExpressionStatement(Box::new_in(
+            ExpressionStatement {
+                span: SPAN,
+                expression: Expression::CallExpression(Box::new_in(call_expr, self.allocator)),
+            },
+            self.allocator,
+        )))
+    }
+
+    /// Create a use directive call: _$use(directive, element, value)
+    fn create_use_directive_call(
+        &self,
+        element_var: &str,
+        _directive_name: &str,
+        directive_expr: &Expression<'a>,
+    ) -> Option<Statement<'a>> {
+        use oxc_allocator::CloneIn;
+        use oxc_ast::ast::*;
+
+        // Create: directive(element, value) or _$use(directive, element, value)
+        // For now, just call the directive directly
+        let element_ref = IdentifierReference {
+            span: SPAN,
+            name: Atom::from(self.allocator.alloc_str(element_var)),
+            reference_id: None.into(),
+        };
+
+        let mut args = OxcVec::new_in(self.allocator);
+        args.push(Argument::Identifier(Box::new_in(element_ref, self.allocator)));
+
+        let call_expr = CallExpression {
+            span: SPAN,
+            callee: directive_expr.clone_in(self.allocator),
+            arguments: args,
+            optional: false,
+            type_arguments: None,
+            pure: false,
+        };
+
+        Some(Statement::ExpressionStatement(Box::new_in(
+            ExpressionStatement {
+                span: SPAN,
+                expression: Expression::CallExpression(Box::new_in(call_expr, self.allocator)),
+            },
+            self.allocator,
+        )))
+    }
+
+    /// Create a className call: _$className(element, className, value)
+    fn create_class_name_call(
+        &self,
+        element_var: &str,
+        class_name: &str,
+        value_expr: &Expression<'a>,
+    ) -> Option<Statement<'a>> {
+        use oxc_allocator::CloneIn;
+        use oxc_ast::ast::*;
+
+        // Create: _$className(element, "className", value)
+        let fn_name = IdentifierReference {
+            span: SPAN,
+            name: Atom::from("_$className"),
+            reference_id: None.into(),
+        };
+
+        let element_ref = IdentifierReference {
+            span: SPAN,
+            name: Atom::from(self.allocator.alloc_str(element_var)),
+            reference_id: None.into(),
+        };
+
+        let mut args = OxcVec::new_in(self.allocator);
+        args.push(Argument::Identifier(Box::new_in(element_ref, self.allocator)));
+        args.push(Argument::StringLiteral(Box::new_in(
+            StringLiteral {
+                span: SPAN,
+                value: Atom::from(self.allocator.alloc_str(class_name)),
+                raw: None,
+                lone_surrogates: false,
+            },
+            self.allocator,
+        )));
+        args.push(Argument::from(value_expr.clone_in(self.allocator)));
+
+        let call_expr = CallExpression {
+            span: SPAN,
+            callee: Expression::Identifier(Box::new_in(fn_name, self.allocator)),
+            arguments: args,
+            optional: false,
+            type_arguments: None,
+            pure: false,
+        };
+
+        Some(Statement::ExpressionStatement(Box::new_in(
+            ExpressionStatement {
+                span: SPAN,
+                expression: Expression::CallExpression(Box::new_in(call_expr, self.allocator)),
+            },
+            self.allocator,
+        )))
+    }
+
     fn create_delegate_events_call(&self) -> Option<Statement<'a>> {
         use oxc_ast::ast::*;
 
@@ -2863,7 +3187,8 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
                 | SlotType::AttrAttribute(_)
                 | SlotType::UseDirective(_)
                 | SlotType::StyleProperty(_)
-                | SlotType::ClassName(_) => {
+                | SlotType::ClassName(_)
+                | SlotType::Spread => {
                     // These slot types don't need special import handling here
                 }
             }
