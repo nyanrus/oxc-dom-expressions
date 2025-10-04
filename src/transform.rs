@@ -532,6 +532,88 @@ impl<'a> DomExpressions<'a> {
                         expr_index += 1;
                     }
                 }
+                SlotType::EventHandler(event_name) => {
+                    // Generate event handler - either delegated or direct addEventListener
+                    if expr_index < expressions.len() {
+                        let element_var = if slot.path.is_empty() {
+                            root_var
+                        } else {
+                            path_to_var.get(&slot.path).map(|s| s.as_str()).unwrap_or(root_var)
+                        };
+                        
+                        // Check if event should be delegated
+                        use crate::utils::should_delegate_event;
+                        let should_delegate = self.options.delegate_events && should_delegate_event(event_name);
+                        
+                        let handler_expr = &expressions[expr_index];
+                        
+                        // For now, handle simple (non-array) handlers
+                        // TODO: Add support for array form [handler] and [handler, data]
+                        if should_delegate {
+                            // Simple delegated handler
+                            if let Some(stmt) = self.create_delegated_event_handler(
+                                element_var,
+                                event_name,
+                                handler_expr,
+                            ) {
+                                stmts.push(stmt);
+                            }
+                        } else {
+                            // Simple non-delegated handler
+                            if let Some(stmt) = self.create_add_event_listener(
+                                element_var,
+                                event_name,
+                                handler_expr,
+                                false,
+                            ) {
+                                stmts.push(stmt);
+                            }
+                        }
+                        expr_index += 1;
+                    }
+                }
+                SlotType::OnEvent(event_name) => {
+                    // Generate on: prefix event - always use _$addEventListener helper
+                    self.add_import("addEventListener");
+                    
+                    if expr_index < expressions.len() {
+                        let element_var = if slot.path.is_empty() {
+                            root_var
+                        } else {
+                            path_to_var.get(&slot.path).map(|s| s.as_str()).unwrap_or(root_var)
+                        };
+                        
+                        // Use the helper function for on: prefix events
+                        if let Some(stmt) = self.create_add_event_listener_helper(
+                            element_var,
+                            event_name,
+                            &expressions[expr_index],
+                            false, // not delegated
+                        ) {
+                            stmts.push(stmt);
+                        }
+                        expr_index += 1;
+                    }
+                }
+                SlotType::OnCaptureEvent(event_name) => {
+                    // Generate oncapture: prefix event - addEventListener with capture
+                    if expr_index < expressions.len() {
+                        let element_var = if slot.path.is_empty() {
+                            root_var
+                        } else {
+                            path_to_var.get(&slot.path).map(|s| s.as_str()).unwrap_or(root_var)
+                        };
+                        
+                        if let Some(stmt) = self.create_capture_event_listener(
+                            element_var,
+                            event_name,
+                            &expressions[expr_index],
+                        ) {
+                            stmts.push(stmt);
+                        }
+                        expr_index += 1;
+                    }
+                }
                 SlotType::UseDirective(_)
                 | SlotType::StyleProperty(_)
                 | SlotType::ClassName(_) => {
@@ -543,16 +625,12 @@ impl<'a> DomExpressions<'a> {
                 _ => {
                     // Other slot types - for now, just consume the expression if there is one
                     // TODO: Implement full handling for:
-                    // - EventHandler, OnEvent, OnCaptureEvent
                     // - Ref, ClassList, StyleObject
                     
                     // Most slot types consume an expression, but some don't
                     let consumes_expression = matches!(
                         &slot.slot_type,
-                        SlotType::EventHandler(_)
-                            | SlotType::OnEvent(_)
-                            | SlotType::OnCaptureEvent(_)
-                            | SlotType::Ref
+                        SlotType::Ref
                             | SlotType::ClassList
                             | SlotType::StyleObject
                     );
@@ -942,6 +1020,427 @@ impl<'a> DomExpressions<'a> {
             },
             self.allocator,
         )))
+    }
+
+    /// Create a delegated event handler: element.$$eventName = handler;
+    fn create_delegated_event_handler(
+        &self,
+        element_var: &str,
+        event_name: &str,
+        handler_expr: &Expression<'a>,
+    ) -> Option<Statement<'a>> {
+        use oxc_allocator::CloneIn;
+        use oxc_ast::ast::*;
+
+        // Normalize event name to lowercase for delegation
+        let normalized_event = event_name.to_lowercase();
+        
+        // Create: element.$$eventName = handler;
+        let element_ref = IdentifierReference {
+            span: SPAN,
+            name: Atom::from(self.allocator.alloc_str(element_var)),
+            reference_id: None.into(),
+        };
+
+        let prop_name = format!("$${}",normalized_event);
+        let prop_ident = IdentifierName {
+            span: SPAN,
+            name: Atom::from(self.allocator.alloc_str(&prop_name)),
+        };
+
+        let member_expr = StaticMemberExpression {
+            span: SPAN,
+            object: Expression::Identifier(Box::new_in(element_ref, self.allocator)),
+            property: prop_ident,
+            optional: false,
+        };
+
+        let assignment = AssignmentExpression {
+            span: SPAN,
+            operator: AssignmentOperator::Assign,
+            left: AssignmentTarget::from(SimpleAssignmentTarget::from(
+                MemberExpression::StaticMemberExpression(Box::new_in(member_expr, self.allocator)),
+            )),
+            right: handler_expr.clone_in(self.allocator),
+        };
+
+        Some(Statement::ExpressionStatement(Box::new_in(
+            ExpressionStatement {
+                span: SPAN,
+                expression: Expression::AssignmentExpression(Box::new_in(
+                    assignment,
+                    self.allocator,
+                )),
+            },
+            self.allocator,
+        )))
+    }
+
+    /// Create an addEventListener call: element.addEventListener(eventName, handler);
+    fn create_add_event_listener(
+        &self,
+        element_var: &str,
+        event_name: &str,
+        handler_expr: &Expression<'a>,
+        _is_capture: bool,
+    ) -> Option<Statement<'a>> {
+        use oxc_allocator::CloneIn;
+        use oxc_ast::ast::*;
+
+        // Create: element.addEventListener("eventName", handler);
+        let element_ref = IdentifierReference {
+            span: SPAN,
+            name: Atom::from(self.allocator.alloc_str(element_var)),
+            reference_id: None.into(),
+        };
+
+        let member_expr = StaticMemberExpression {
+            span: SPAN,
+            object: Expression::Identifier(Box::new_in(element_ref, self.allocator)),
+            property: IdentifierName {
+                span: SPAN,
+                name: Atom::from("addEventListener"),
+            },
+            optional: false,
+        };
+
+        let mut args = OxcVec::new_in(self.allocator);
+        
+        // First argument: event name as string
+        args.push(Argument::StringLiteral(Box::new_in(
+            StringLiteral {
+                span: SPAN,
+                value: Atom::from(self.allocator.alloc_str(event_name)),
+                raw: None,
+                lone_surrogates: false,
+            },
+            self.allocator,
+        )));
+
+        // Second argument: handler expression
+        args.push(Argument::from(handler_expr.clone_in(self.allocator)));
+
+        let call = CallExpression {
+            span: SPAN,
+            callee: Expression::from(MemberExpression::StaticMemberExpression(
+                Box::new_in(member_expr, self.allocator),
+            )),
+            arguments: args,
+            optional: false,
+            type_arguments: None,
+            pure: false,
+        };
+
+        Some(Statement::ExpressionStatement(Box::new_in(
+            ExpressionStatement {
+                span: SPAN,
+                expression: Expression::CallExpression(Box::new_in(call, self.allocator)),
+            },
+            self.allocator,
+        )))
+    }
+
+    /// Create a capture phase event listener: element.addEventListener(eventName, handler, true);
+    fn create_capture_event_listener(
+        &self,
+        element_var: &str,
+        event_name: &str,
+        handler_expr: &Expression<'a>,
+    ) -> Option<Statement<'a>> {
+        use oxc_allocator::CloneIn;
+        use oxc_ast::ast::*;
+
+        // Create: element.addEventListener("eventName", handler, true);
+        let element_ref = IdentifierReference {
+            span: SPAN,
+            name: Atom::from(self.allocator.alloc_str(element_var)),
+            reference_id: None.into(),
+        };
+
+        let member_expr = StaticMemberExpression {
+            span: SPAN,
+            object: Expression::Identifier(Box::new_in(element_ref, self.allocator)),
+            property: IdentifierName {
+                span: SPAN,
+                name: Atom::from("addEventListener"),
+            },
+            optional: false,
+        };
+
+        let mut args = OxcVec::new_in(self.allocator);
+        
+        // First argument: event name as string
+        args.push(Argument::StringLiteral(Box::new_in(
+            StringLiteral {
+                span: SPAN,
+                value: Atom::from(self.allocator.alloc_str(event_name)),
+                raw: None,
+                lone_surrogates: false,
+            },
+            self.allocator,
+        )));
+
+        // Second argument: handler expression
+        args.push(Argument::from(handler_expr.clone_in(self.allocator)));
+
+        // Third argument: true for capture
+        args.push(Argument::BooleanLiteral(Box::new_in(
+            BooleanLiteral {
+                span: SPAN,
+                value: true,
+            },
+            self.allocator,
+        )));
+
+        let call = CallExpression {
+            span: SPAN,
+            callee: Expression::from(MemberExpression::StaticMemberExpression(
+                Box::new_in(member_expr, self.allocator),
+            )),
+            arguments: args,
+            optional: false,
+            type_arguments: None,
+            pure: false,
+        };
+
+        Some(Statement::ExpressionStatement(Box::new_in(
+            ExpressionStatement {
+                span: SPAN,
+                expression: Expression::CallExpression(Box::new_in(call, self.allocator)),
+            },
+            self.allocator,
+        )))
+    }
+
+    /// Create element.$$eventNameData = data;
+    fn create_delegated_event_data(
+        &self,
+        element_var: &str,
+        event_name: &str,
+        data_expr: &Expression<'a>,
+    ) -> Option<Statement<'a>> {
+        use oxc_allocator::CloneIn;
+        use oxc_ast::ast::*;
+
+        // Normalize event name to lowercase
+        let normalized_event = event_name.to_lowercase();
+        
+        // Create: element.$$eventNameData = data;
+        let element_ref = IdentifierReference {
+            span: SPAN,
+            name: Atom::from(self.allocator.alloc_str(element_var)),
+            reference_id: None.into(),
+        };
+
+        let prop_name = format!("$${}Data", normalized_event);
+        let prop_ident = IdentifierName {
+            span: SPAN,
+            name: Atom::from(self.allocator.alloc_str(&prop_name)),
+        };
+
+        let member_expr = StaticMemberExpression {
+            span: SPAN,
+            object: Expression::Identifier(Box::new_in(element_ref, self.allocator)),
+            property: prop_ident,
+            optional: false,
+        };
+
+        let assignment = AssignmentExpression {
+            span: SPAN,
+            operator: AssignmentOperator::Assign,
+            left: AssignmentTarget::from(SimpleAssignmentTarget::from(
+                MemberExpression::StaticMemberExpression(Box::new_in(member_expr, self.allocator)),
+            )),
+            right: data_expr.clone_in(self.allocator),
+        };
+
+        Some(Statement::ExpressionStatement(Box::new_in(
+            ExpressionStatement {
+                span: SPAN,
+                expression: Expression::AssignmentExpression(Box::new_in(
+                    assignment,
+                    self.allocator,
+                )),
+            },
+            self.allocator,
+        )))
+    }
+
+    /// Create _$addEventListener helper call
+    fn create_add_event_listener_helper(
+        &self,
+        element_var: &str,
+        event_name: &str,
+        handler_expr: &Expression<'a>,
+        is_delegated: bool,
+    ) -> Option<Statement<'a>> {
+        use oxc_allocator::CloneIn;
+        use oxc_ast::ast::*;
+
+        // Create: _$addEventListener(element, "eventName", handler, true_if_delegated);
+        let helper_fn = IdentifierReference {
+            span: SPAN,
+            name: Atom::from("_$addEventListener"),
+            reference_id: None.into(),
+        };
+
+        let mut args = OxcVec::new_in(self.allocator);
+        
+        // First argument: element reference
+        args.push(Argument::Identifier(Box::new_in(
+            IdentifierReference {
+                span: SPAN,
+                name: Atom::from(self.allocator.alloc_str(element_var)),
+                reference_id: None.into(),
+            },
+            self.allocator,
+        )));
+
+        // Second argument: event name as string
+        args.push(Argument::StringLiteral(Box::new_in(
+            StringLiteral {
+                span: SPAN,
+                value: Atom::from(self.allocator.alloc_str(event_name)),
+                raw: None,
+                lone_surrogates: false,
+            },
+            self.allocator,
+        )));
+
+        // Third argument: handler expression
+        args.push(Argument::from(handler_expr.clone_in(self.allocator)));
+
+        // Fourth argument: true if delegated (for backwards compat)
+        if is_delegated {
+            args.push(Argument::BooleanLiteral(Box::new_in(
+                BooleanLiteral {
+                    span: SPAN,
+                    value: true,
+                },
+                self.allocator,
+            )));
+        }
+
+        let call = CallExpression {
+            span: SPAN,
+            callee: Expression::Identifier(Box::new_in(helper_fn, self.allocator)),
+            arguments: args,
+            optional: false,
+            type_arguments: None,
+            pure: false,
+        };
+
+        Some(Statement::ExpressionStatement(Box::new_in(
+            ExpressionStatement {
+                span: SPAN,
+                expression: Expression::CallExpression(Box::new_in(call, self.allocator)),
+            },
+            self.allocator,
+        )))
+    }
+
+    /// Create wrapped event handler: element.addEventListener(event, e => handler(data, e))
+    fn create_wrapped_event_handler(
+        &self,
+        element_var: &str,
+        event_name: &str,
+        handler_expr: &Expression<'a>,
+        data_expr: &Expression<'a>,
+    ) -> Option<Statement<'a>> {
+        use oxc_allocator::CloneIn;
+        use oxc_ast::ast::*;
+
+        // Create the wrapper function: e => handler(data, e)
+        // First create the call: handler(data, e)
+        let mut call_args = OxcVec::new_in(self.allocator);
+        call_args.push(Argument::from(data_expr.clone_in(self.allocator)));
+        call_args.push(Argument::Identifier(Box::new_in(
+            IdentifierReference {
+                span: SPAN,
+                name: Atom::from("e"),
+                reference_id: None.into(),
+            },
+            self.allocator,
+        )));
+
+        let handler_call = CallExpression {
+            span: SPAN,
+            callee: handler_expr.clone_in(self.allocator),
+            arguments: call_args,
+            optional: false,
+            type_arguments: None,
+            pure: false,
+        };
+
+        // Wrap in arrow function: e => handler(data, e)
+        let mut params_items = OxcVec::new_in(self.allocator);
+        params_items.push(FormalParameter {
+            span: SPAN,
+            decorators: OxcVec::new_in(self.allocator),
+            pattern: BindingPattern {
+                kind: BindingPatternKind::BindingIdentifier(Box::new_in(
+                    BindingIdentifier {
+                        span: SPAN,
+                        name: Atom::from("e"),
+                        symbol_id: None.into(),
+                    },
+                    self.allocator,
+                )),
+                type_annotation: None,
+                optional: false,
+            },
+            accessibility: None,
+            readonly: false,
+            r#override: false,
+        });
+
+        let arrow_fn = ArrowFunctionExpression {
+            span: SPAN,
+            expression: true,
+            r#async: false,
+            type_parameters: None,
+            params: Box::new_in(
+                FormalParameters {
+                    span: SPAN,
+                    kind: FormalParameterKind::ArrowFormalParameters,
+                    items: params_items,
+                    rest: None,
+                },
+                self.allocator,
+            ),
+            return_type: None,
+            body: Box::new_in(
+                FunctionBody {
+                    span: SPAN,
+                    directives: OxcVec::new_in(self.allocator),
+                    statements: OxcVec::from_iter_in(
+                        [Statement::ExpressionStatement(Box::new_in(
+                            ExpressionStatement {
+                                span: SPAN,
+                                expression: Expression::CallExpression(Box::new_in(
+                                    handler_call,
+                                    self.allocator,
+                                )),
+                            },
+                            self.allocator,
+                        ))],
+                        self.allocator,
+                    ),
+                },
+                self.allocator,
+            ),
+            scope_id: Default::default(),
+            pure: false,
+            pife: false,
+        };
+
+        // Now create the addEventListener call
+        self.create_add_event_listener(
+            element_var,
+            event_name,
+            &Expression::ArrowFunctionExpression(Box::new_in(arrow_fn, self.allocator)),
+            false,
+        )
     }
 
     /// Create return statement
