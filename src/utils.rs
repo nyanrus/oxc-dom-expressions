@@ -407,9 +407,17 @@ mod tests {
 
     #[test]
     fn test_should_delegate_event() {
+        // Events that should be delegated
         assert!(should_delegate_event("click"));
         assert!(should_delegate_event("Click"));
-        assert!(should_delegate_event("input"));
+        assert!(should_delegate_event("mousedown"));
+        assert!(should_delegate_event("keydown"));
+        
+        // Events that should NOT be delegated
+        assert!(!should_delegate_event("input"));
+        assert!(!should_delegate_event("change"));
+        assert!(!should_delegate_event("blur"));
+        assert!(!should_delegate_event("focus"));
         assert!(!should_delegate_event("customEvent"));
     }
 
