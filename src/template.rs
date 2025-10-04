@@ -530,18 +530,26 @@ mod template_debug {
     
     #[test]
     fn debug_template_structure() {
-        let code = r#"<span>Hello {name}</span>"#;
-        let allocator = oxc_allocator::Allocator::default();
-        let ret = oxc_parser::Parser::new(&allocator, code, oxc_span::SourceType::jsx()).parse();
+        let test_cases = vec![
+            r#"<span>Hello {name}</span>"#,
+            r#"<span>{greeting} {name}</span>"#,
+            r#"<span> {greeting} {name} </span>"#,
+        ];
         
-        if let Some(expr) = ret.program.body.first() {
-            if let oxc_ast::ast::Statement::ExpressionStatement(stmt) = expr {
-                if let oxc_ast::ast::Expression::JSXElement(elem) = &stmt.expression {
-                    let template = crate::template::build_template(elem);
-                    println!("HTML: {:?}", template.html);
-                    for (i, slot) in template.dynamic_slots.iter().enumerate() {
-                        println!("Slot {}: path={:?}, marker_path={:?}, type={:?}", 
-                            i, slot.path, slot.marker_path, slot.slot_type);
+        for code in test_cases {
+            println!("\n=== Testing: {} ===", code);
+            let allocator = oxc_allocator::Allocator::default();
+            let ret = oxc_parser::Parser::new(&allocator, code, oxc_span::SourceType::jsx()).parse();
+            
+            if let Some(expr) = ret.program.body.first() {
+                if let oxc_ast::ast::Statement::ExpressionStatement(stmt) = expr {
+                    if let oxc_ast::ast::Expression::JSXElement(elem) = &stmt.expression {
+                        let template = crate::template::build_template(elem);
+                        println!("HTML: {:?}", template.html);
+                        for (i, slot) in template.dynamic_slots.iter().enumerate() {
+                            println!("Slot {}: path={:?}, marker_path={:?}, type={:?}", 
+                                i, slot.path, slot.marker_path, slot.slot_type);
+                        }
                     }
                 }
             }
