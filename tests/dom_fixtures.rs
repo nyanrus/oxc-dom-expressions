@@ -5,6 +5,7 @@
 
 use oxc_allocator::Allocator;
 use oxc_codegen::Codegen;
+use oxc_dom_expressions::compat::BabelOutputNormalizer;
 use oxc_dom_expressions::{DomExpressions, DomExpressionsOptions};
 use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
@@ -52,27 +53,10 @@ fn transform_jsx(source: &str) -> Result<String, String> {
     // Generate code from the transformed AST
     let mut generated = Codegen::new().build(&program).code;
 
-    // Post-process to match expected format
-    generated = normalize_output(&generated);
+    // Post-process to match expected format using compat module
+    generated = BabelOutputNormalizer::normalize(&generated);
 
     Ok(generated)
-}
-
-/// Normalize output to match expected format from babel plugin
-fn normalize_output(code: &str) -> String {
-    let mut result = code.to_string();
-
-    // Replace /* @__PURE__ */ with /*#__PURE__*/
-    result = result.replace("/* @__PURE__ */", "/*#__PURE__*/");
-
-    // Replace tabs with double spaces to match babel output
-    result = result.replace('\t', "  ");
-
-    // Format multi-line variable declarations
-    // Replace all instances of ", _tmpl$" with ",\n  _tmpl$" in the entire code
-    result = result.replace(", _tmpl$", ",\n  _tmpl$");
-
-    result
 }
 
 /// Compare actual output with expected output and print diff

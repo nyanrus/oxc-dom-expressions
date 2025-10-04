@@ -70,8 +70,10 @@
 //! - `options`: Configuration options (re-exported as [`DomExpressionsOptions`])
 //! - [`optimizer`]: Template optimization and statistics
 //! - [`utils`]: Utility functions for component detection, event handling, etc.
+//! - [`compat`]: Compatibility layer for babel-plugin-jsx-dom-expressions
 
 pub mod codegen;
+pub mod compat;
 pub mod html_subset_parser;
 pub mod optimizer;
 mod options;
