@@ -384,11 +384,11 @@ fn normalize_text_whitespace(text: &str) -> String {
     if text.trim().is_empty() && text.contains('\n') {
         return String::new(); // Will be skipped
     }
-    
+
     // Replace runs of whitespace with single space
     let mut result = String::new();
     let mut prev_was_whitespace = false;
-    
+
     for ch in text.chars() {
         if ch.is_whitespace() {
             if !prev_was_whitespace {
@@ -400,30 +400,37 @@ fn normalize_text_whitespace(text: &str) -> String {
             prev_was_whitespace = false;
         }
     }
-    
+
     // Trim leading/trailing whitespace if the original text had newlines at edges
     // (indicates formatting whitespace, not content whitespace)
-    let has_leading_newline = text.chars().take_while(|c| c.is_whitespace()).any(|c| c == '\n');
-    let has_trailing_newline = text.chars().rev().take_while(|c| c.is_whitespace()).any(|c| c == '\n');
-    
+    let has_leading_newline = text
+        .chars()
+        .take_while(|c| c.is_whitespace())
+        .any(|c| c == '\n');
+    let has_trailing_newline = text
+        .chars()
+        .rev()
+        .take_while(|c| c.is_whitespace())
+        .any(|c| c == '\n');
+
     if has_leading_newline {
         result = result.trim_start().to_string();
     }
     if has_trailing_newline {
         result = result.trim_end().to_string();
     }
-    
+
     result
 }
 
 /// Escape HTML special characters in text content
 /// Only < and & need escaping in text content (> is optional)
 fn escape_html(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
+    text.replace('&', "&amp;").replace('<', "&lt;")
 }
 
 /// Build HTML for a JSX child with context about its position
+#[allow(clippy::too_many_arguments)] // All parameters are needed for context tracking
 fn build_child_html_with_context(
     child: &JSXChild,
     html: &mut String,
@@ -440,10 +447,10 @@ fn build_child_html_with_context(
         JSXChild::Text(text) => {
             // Static text - normalize whitespace following HTML/DOM rules
             let text_value = text.value.as_str();
-            
+
             // Normalize whitespace (collapse multiple spaces/newlines to single space, trim)
             let normalized = normalize_text_whitespace(text_value);
-            
+
             // Skip if text becomes empty after normalization
             if normalized.is_empty() {
                 return;
@@ -462,10 +469,10 @@ fn build_child_html_with_context(
                 JSXExpression::StringLiteral(string_lit) => {
                     // Static string - include in template with HTML escaping and template literal escaping
                     let text_value = string_lit.value.as_str();
-                    
+
                     // First escape HTML special characters (< > &)
                     let html_escaped = escape_html(text_value);
-                    
+
                     // Then escape for template literals (backslash and opening brace)
                     let escaped = html_escaped.replace('\\', "\\\\").replace('{', "\\{");
                     html.push_str(&escaped);
@@ -499,9 +506,7 @@ fn build_child_html_with_context(
                 last_marker_path.clone()
             } else if is_first_node && !is_last_child {
                 // First node but not last child - use next node as insertion point
-                let mut next_path = Vec::new();
-                next_path.push("firstChild".to_string());
-                Some(next_path)
+                Some(vec!["firstChild".to_string()])
             } else if is_last_child {
                 // Last child - insert at end
                 None
