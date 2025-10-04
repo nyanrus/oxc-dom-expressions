@@ -254,7 +254,7 @@ impl<'a> DomExpressions<'a> {
 
         // Collect all paths (including intermediate paths) we need to create
         let mut all_paths = std::collections::HashSet::new();
-        
+
         for slot in &template.dynamic_slots {
             // Add intermediate paths for slot path
             if !slot.path.is_empty() {
@@ -281,7 +281,7 @@ impl<'a> DomExpressions<'a> {
         for path in sorted_paths {
             let elem_var = self.generate_element_var();
             path_to_var.insert(path.clone(), elem_var.clone());
-            
+
             // For intermediate references, use the previous reference as base
             let base_var = if path.len() == 1 {
                 &root_var
@@ -290,7 +290,7 @@ impl<'a> DomExpressions<'a> {
                 let parent_path = &path[..path.len() - 1];
                 path_to_var.get(parent_path).unwrap_or(&root_var)
             };
-            
+
             // Create reference from parent
             let single_step_path = vec![path.last().unwrap().clone()];
             declarators.push(self.create_element_ref_declarator(
@@ -475,14 +475,17 @@ impl<'a> DomExpressions<'a> {
                 SlotType::BoolAttribute(attr_name) => {
                     // Generate setBoolAttribute call
                     self.add_import("setBoolAttribute");
-                    
+
                     if expr_index < expressions.len() {
                         let element_var = if slot.path.is_empty() {
                             root_var
                         } else {
-                            path_to_var.get(&slot.path).map(|s| s.as_str()).unwrap_or(root_var)
+                            path_to_var
+                                .get(&slot.path)
+                                .map(|s| s.as_str())
+                                .unwrap_or(root_var)
                         };
-                        
+
                         // For now, generate a simple setBoolAttribute call
                         // TODO: Implement full setBoolAttribute code generation
                         expr_index += 1;
@@ -494,9 +497,12 @@ impl<'a> DomExpressions<'a> {
                         let element_var = if slot.path.is_empty() {
                             root_var
                         } else {
-                            path_to_var.get(&slot.path).map(|s| s.as_str()).unwrap_or(root_var)
+                            path_to_var
+                                .get(&slot.path)
+                                .map(|s| s.as_str())
+                                .unwrap_or(root_var)
                         };
-                        
+
                         if let Some(stmt) = self.create_property_assignment(
                             element_var,
                             attr_name,
@@ -510,14 +516,17 @@ impl<'a> DomExpressions<'a> {
                 SlotType::AttrAttribute(attr_name) => {
                     // Generate setAttribute call (without effect wrapper for static values)
                     self.add_import("setAttribute");
-                    
+
                     if expr_index < expressions.len() {
                         let element_var = if slot.path.is_empty() {
                             root_var
                         } else {
-                            path_to_var.get(&slot.path).map(|s| s.as_str()).unwrap_or(root_var)
+                            path_to_var
+                                .get(&slot.path)
+                                .map(|s| s.as_str())
+                                .unwrap_or(root_var)
                         };
-                        
+
                         if let Some(stmt) = self.create_static_set_attribute_call(
                             element_var,
                             attr_name,
@@ -534,15 +543,19 @@ impl<'a> DomExpressions<'a> {
                         let element_var = if slot.path.is_empty() {
                             root_var
                         } else {
-                            path_to_var.get(&slot.path).map(|s| s.as_str()).unwrap_or(root_var)
+                            path_to_var
+                                .get(&slot.path)
+                                .map(|s| s.as_str())
+                                .unwrap_or(root_var)
                         };
-                        
+
                         // Check if event should be delegated
                         use crate::utils::should_delegate_event;
-                        let should_delegate = self.options.delegate_events && should_delegate_event(event_name);
-                        
+                        let should_delegate =
+                            self.options.delegate_events && should_delegate_event(event_name);
+
                         let handler_expr = &expressions[expr_index];
-                        
+
                         // For now, handle simple (non-array) handlers
                         // TODO: Add support for array form [handler] and [handler, data]
                         if should_delegate {
@@ -571,14 +584,17 @@ impl<'a> DomExpressions<'a> {
                 SlotType::OnEvent(event_name) => {
                     // Generate on: prefix event - always use _$addEventListener helper
                     self.add_import("addEventListener");
-                    
+
                     if expr_index < expressions.len() {
                         let element_var = if slot.path.is_empty() {
                             root_var
                         } else {
-                            path_to_var.get(&slot.path).map(|s| s.as_str()).unwrap_or(root_var)
+                            path_to_var
+                                .get(&slot.path)
+                                .map(|s| s.as_str())
+                                .unwrap_or(root_var)
                         };
-                        
+
                         // Use the helper function for on: prefix events
                         if let Some(stmt) = self.create_add_event_listener_helper(
                             element_var,
@@ -597,9 +613,12 @@ impl<'a> DomExpressions<'a> {
                         let element_var = if slot.path.is_empty() {
                             root_var
                         } else {
-                            path_to_var.get(&slot.path).map(|s| s.as_str()).unwrap_or(root_var)
+                            path_to_var
+                                .get(&slot.path)
+                                .map(|s| s.as_str())
+                                .unwrap_or(root_var)
                         };
-                        
+
                         if let Some(stmt) = self.create_capture_event_listener(
                             element_var,
                             event_name,
@@ -610,9 +629,7 @@ impl<'a> DomExpressions<'a> {
                         expr_index += 1;
                     }
                 }
-                SlotType::UseDirective(_)
-                | SlotType::StyleProperty(_)
-                | SlotType::ClassName(_) => {
+                SlotType::UseDirective(_) | SlotType::StyleProperty(_) | SlotType::ClassName(_) => {
                     // These slot types not yet fully implemented
                     if expr_index < expressions.len() {
                         expr_index += 1;
@@ -622,15 +639,13 @@ impl<'a> DomExpressions<'a> {
                     // Other slot types - for now, just consume the expression if there is one
                     // TODO: Implement full handling for:
                     // - Ref, ClassList, StyleObject
-                    
+
                     // Most slot types consume an expression, but some don't
                     let consumes_expression = matches!(
                         &slot.slot_type,
-                        SlotType::Ref
-                            | SlotType::ClassList
-                            | SlotType::StyleObject
+                        SlotType::Ref | SlotType::ClassList | SlotType::StyleObject
                     );
-                    
+
                     if consumes_expression && expr_index < expressions.len() {
                         expr_index += 1;
                     }
@@ -858,7 +873,7 @@ impl<'a> DomExpressions<'a> {
 
         let arrow_fn = ArrowFunctionExpression {
             span: SPAN,
-            expression: true,  // Use expression form for concise arrow function
+            expression: true, // Use expression form for concise arrow function
             r#async: false,
             params: Box::new_in(
                 FormalParameters {
@@ -1031,7 +1046,7 @@ impl<'a> DomExpressions<'a> {
 
         // Normalize event name to lowercase for delegation
         let normalized_event = event_name.to_lowercase();
-        
+
         // Create: element.$$eventName = handler;
         let element_ref = IdentifierReference {
             span: SPAN,
@@ -1039,7 +1054,7 @@ impl<'a> DomExpressions<'a> {
             reference_id: None.into(),
         };
 
-        let prop_name = format!("$${}",normalized_event);
+        let prop_name = format!("$${}", normalized_event);
         let prop_ident = IdentifierName {
             span: SPAN,
             name: Atom::from(self.allocator.alloc_str(&prop_name)),
@@ -1102,7 +1117,7 @@ impl<'a> DomExpressions<'a> {
         };
 
         let mut args = OxcVec::new_in(self.allocator);
-        
+
         // First argument: event name as string
         args.push(Argument::StringLiteral(Box::new_in(
             StringLiteral {
@@ -1119,9 +1134,10 @@ impl<'a> DomExpressions<'a> {
 
         let call = CallExpression {
             span: SPAN,
-            callee: Expression::from(MemberExpression::StaticMemberExpression(
-                Box::new_in(member_expr, self.allocator),
-            )),
+            callee: Expression::from(MemberExpression::StaticMemberExpression(Box::new_in(
+                member_expr,
+                self.allocator,
+            ))),
             arguments: args,
             optional: false,
             type_arguments: None,
@@ -1165,7 +1181,7 @@ impl<'a> DomExpressions<'a> {
         };
 
         let mut args = OxcVec::new_in(self.allocator);
-        
+
         // First argument: event name as string
         args.push(Argument::StringLiteral(Box::new_in(
             StringLiteral {
@@ -1191,9 +1207,10 @@ impl<'a> DomExpressions<'a> {
 
         let call = CallExpression {
             span: SPAN,
-            callee: Expression::from(MemberExpression::StaticMemberExpression(
-                Box::new_in(member_expr, self.allocator),
-            )),
+            callee: Expression::from(MemberExpression::StaticMemberExpression(Box::new_in(
+                member_expr,
+                self.allocator,
+            ))),
             arguments: args,
             optional: false,
             type_arguments: None,
@@ -1221,7 +1238,7 @@ impl<'a> DomExpressions<'a> {
 
         // Normalize event name to lowercase
         let normalized_event = event_name.to_lowercase();
-        
+
         // Create: element.$$eventNameData = data;
         let element_ref = IdentifierReference {
             span: SPAN,
@@ -1282,7 +1299,7 @@ impl<'a> DomExpressions<'a> {
         };
 
         let mut args = OxcVec::new_in(self.allocator);
-        
+
         // First argument: element reference
         args.push(Argument::Identifier(Box::new_in(
             IdentifierReference {
@@ -1961,7 +1978,7 @@ impl<'a> DomExpressions<'a> {
                     // Text without newlines (like single spaces) should be kept as-is
                     text_value
                 };
-                
+
                 Expression::StringLiteral(Box::new_in(
                     StringLiteral {
                         span: SPAN,
@@ -1971,7 +1988,7 @@ impl<'a> DomExpressions<'a> {
                     },
                     self.allocator,
                 ))
-            },
+            }
             JSXChild::ExpressionContainer(expr_container) => match &expr_container.expression {
                 jsx_expr if jsx_expr.is_expression() => {
                     self.clone_expression(jsx_expr.as_expression().unwrap())
@@ -2048,8 +2065,9 @@ impl<'a> DomExpressions<'a> {
                 JSXChild::Text(text) => {
                     let text_value = text.value.as_str();
                     // Keep if not empty when trimmed OR if it's a single space without newlines
-                    !text_value.trim().is_empty() || (!text_value.contains('\n') && !text_value.is_empty())
-                },
+                    !text_value.trim().is_empty()
+                        || (!text_value.contains('\n') && !text_value.is_empty())
+                }
                 _ => true,
             })
             .collect();
@@ -2098,9 +2116,11 @@ impl<'a> DomExpressions<'a> {
                 // Check if this is an IIFE (immediately invoked function expression)
                 let is_iife = matches!(
                     call_expr.callee,
-                    Expression::FunctionExpression(_) | Expression::ArrowFunctionExpression(_) | Expression::ParenthesizedExpression(_)
+                    Expression::FunctionExpression(_)
+                        | Expression::ArrowFunctionExpression(_)
+                        | Expression::ParenthesizedExpression(_)
                 );
-                
+
                 if is_iife {
                     // Don't wrap IIFEs
                     return expr;
@@ -2108,7 +2128,9 @@ impl<'a> DomExpressions<'a> {
 
                 // Check if this is a template or component call - those shouldn't be wrapped
                 if let Expression::Identifier(ident) = &call_expr.callee {
-                    if ident.name.starts_with("_tmpl$") || ident.name.starts_with("_$createComponent") {
+                    if ident.name.starts_with("_tmpl$")
+                        || ident.name.starts_with("_$createComponent")
+                    {
                         return expr;
                     }
                 }
@@ -2118,7 +2140,10 @@ impl<'a> DomExpressions<'a> {
                 let expr_to_wrap = if call_expr.arguments.is_empty() {
                     // Check if callee is a simple reference (Identifier or MemberExpression)
                     match &call_expr.callee {
-                        Expression::Identifier(_) | Expression::StaticMemberExpression(_) | Expression::ComputedMemberExpression(_) | Expression::PrivateFieldExpression(_) => {
+                        Expression::Identifier(_)
+                        | Expression::StaticMemberExpression(_)
+                        | Expression::ComputedMemberExpression(_)
+                        | Expression::PrivateFieldExpression(_) => {
                             // Clone the callee and use it as the argument
                             call_expr.callee.clone_in(self.allocator)
                         }
@@ -2155,8 +2180,8 @@ impl<'a> DomExpressions<'a> {
                 Expression::CallExpression(Box::new_in(memo_call, self.allocator))
             }
             // Simple expressions that don't need wrapping
-            Expression::Identifier(_) 
-            | Expression::StringLiteral(_) 
+            Expression::Identifier(_)
+            | Expression::StringLiteral(_)
             | Expression::NumericLiteral(_)
             | Expression::BooleanLiteral(_)
             | Expression::NullLiteral(_) => {
@@ -2167,11 +2192,11 @@ impl<'a> DomExpressions<'a> {
             _ => {
                 // Wrap with _$memo(() => expr)
                 self.add_import("memo");
-                
+
                 // Create arrow function: () => expr (expression form)
                 let arrow_fn = ArrowFunctionExpression {
                     span: SPAN,
-                    expression: true,  // Expression form, not block
+                    expression: true, // Expression form, not block
                     r#async: false,
                     type_parameters: None,
                     params: Box::new_in(

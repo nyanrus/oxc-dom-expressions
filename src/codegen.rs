@@ -221,11 +221,7 @@ pub fn generate_template_transformation(
                 );
             }
             SlotType::PropAttribute(name) => {
-                let _ = writeln!(
-                    code,
-                    "  {}.{} = {{/* value */}};",
-                    element_ref, name
-                );
+                let _ = writeln!(code, "  {}.{} = {{/* value */}};", element_ref, name);
             }
             SlotType::AttrAttribute(name) => {
                 let _ = writeln!(

@@ -47,10 +47,10 @@ use oxc_ast::ast::*;
 use std::fmt::Write;
 
 use crate::utils::{
-    get_event_name, get_prefix_event_name, get_prefixed_name, is_attr_attribute,
-    is_bool_attribute, is_class_list_binding, is_class_name_binding, is_event_handler,
-    is_on_capture_event, is_on_prefix_event, is_prop_attribute, is_ref_binding,
-    is_style_binding, is_style_property, is_use_directive, is_void_element,
+    get_event_name, get_prefix_event_name, get_prefixed_name, is_attr_attribute, is_bool_attribute,
+    is_class_list_binding, is_class_name_binding, is_event_handler, is_on_capture_event,
+    is_on_prefix_event, is_prop_attribute, is_ref_binding, is_style_binding, is_style_property,
+    is_use_directive, is_void_element,
 };
 
 /// Represents a template with its HTML string and dynamic expression positions
@@ -301,14 +301,12 @@ fn build_element_html(
                     !(text_value.trim().is_empty() && text_value.contains('\n'))
                 }
                 JSXChild::Element(_) => true,
-                JSXChild::ExpressionContainer(container) => {
-                    !matches!(
-                        &container.expression,
-                        JSXExpression::StringLiteral(_)
-                            | JSXExpression::NumericLiteral(_)
-                            | JSXExpression::EmptyExpression(_)
-                    )
-                }
+                JSXChild::ExpressionContainer(container) => !matches!(
+                    &container.expression,
+                    JSXExpression::StringLiteral(_)
+                        | JSXExpression::NumericLiteral(_)
+                        | JSXExpression::EmptyExpression(_)
+                ),
                 JSXChild::Fragment(_) | JSXChild::Spread(_) => false,
             };
             will_create_node.push(creates_node);
@@ -316,7 +314,7 @@ fn build_element_html(
 
         // Second pass: process children and track paths
         let mut num_nodes_added = 0;
-        
+
         for (i, child) in element.children.iter().enumerate() {
             let is_last_child = i == element.children.len() - 1;
             let next_is_expression = if i + 1 < element.children.len() {
@@ -347,6 +345,7 @@ fn build_element_html(
                 path,
                 is_last_child,
                 next_is_expression,
+                num_nodes_added,
             );
 
             // Update count if this child will create a node (marker or actual content)
@@ -371,6 +370,7 @@ fn build_child_html_with_context(
     path: &mut Vec<String>,
     is_last_child: bool,
     next_is_expression: bool,
+    num_nodes_so_far: usize,
 ) {
     match child {
         JSXChild::Text(text) => {
@@ -429,13 +429,15 @@ fn build_child_html_with_context(
                 Some(path.clone())
             } else if !is_last_child {
                 // Next child exists and is static content - it will be our insertion point
-                // Calculate the path where the next static child will be
-                // It will be the next sibling of the current path
-                let mut next_path = path.clone();
-                if next_path.is_empty() {
+                // Calculate the path where the next static child will be based on nodes so far
+                let mut next_path = Vec::new();
+                if num_nodes_so_far == 0 {
                     next_path.push("firstChild".to_string());
                 } else {
-                    next_path.push("nextSibling".to_string());
+                    next_path.push("firstChild".to_string());
+                    for _ in 0..num_nodes_so_far {
+                        next_path.push("nextSibling".to_string());
+                    }
                 }
                 Some(next_path)
             } else {
@@ -527,21 +529,32 @@ mod tests {
 #[cfg(test)]
 mod template_debug {
     use super::*;
-    
+
     #[test]
     fn debug_template_structure() {
-        let code = r#"<span>Hello {name}</span>"#;
-        let allocator = oxc_allocator::Allocator::default();
-        let ret = oxc_parser::Parser::new(&allocator, code, oxc_span::SourceType::jsx()).parse();
-        
-        if let Some(expr) = ret.program.body.first() {
-            if let oxc_ast::ast::Statement::ExpressionStatement(stmt) = expr {
-                if let oxc_ast::ast::Expression::JSXElement(elem) = &stmt.expression {
-                    let template = crate::template::build_template(elem);
-                    println!("HTML: {:?}", template.html);
-                    for (i, slot) in template.dynamic_slots.iter().enumerate() {
-                        println!("Slot {}: path={:?}, marker_path={:?}, type={:?}", 
-                            i, slot.path, slot.marker_path, slot.slot_type);
+        let test_cases = vec![
+            r#"<span>Hello {name}</span>"#,
+            r#"<span>{greeting} {name}</span>"#,
+            r#"<span> {greeting} {name} </span>"#,
+        ];
+
+        for code in test_cases {
+            println!("\n=== Testing: {} ===", code);
+            let allocator = oxc_allocator::Allocator::default();
+            let ret =
+                oxc_parser::Parser::new(&allocator, code, oxc_span::SourceType::jsx()).parse();
+
+            if let Some(expr) = ret.program.body.first() {
+                if let oxc_ast::ast::Statement::ExpressionStatement(stmt) = expr {
+                    if let oxc_ast::ast::Expression::JSXElement(elem) = &stmt.expression {
+                        let template = crate::template::build_template(elem);
+                        println!("HTML: {:?}", template.html);
+                        for (i, slot) in template.dynamic_slots.iter().enumerate() {
+                            println!(
+                                "Slot {}: path={:?}, marker_path={:?}, type={:?}",
+                                i, slot.path, slot.marker_path, slot.slot_type
+                            );
+                        }
                     }
                 }
             }
