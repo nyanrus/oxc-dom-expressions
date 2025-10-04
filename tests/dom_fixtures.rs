@@ -248,3 +248,6 @@ fn test_text_interpolation() {
         }
     }
 }
+#[test]
+fn debug_simple_text() {
+    let code = r#"const trailingExpr = <span>Hello {name}</span>;"#;
