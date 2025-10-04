@@ -405,11 +405,7 @@ impl<'a> DomExpressions<'a> {
     /// Generate unique element variable name
     fn generate_element_var(&mut self) -> String {
         self.element_counter += 1;
-        if self.element_counter == 1 {
-            "_el$".to_string()
-        } else {
-            format!("_el${}", self.element_counter)
-        }
+        format!("_el${}", self.element_counter)
     }
 
     /// Create runtime calls for dynamic content from extracted expressions
@@ -841,6 +837,7 @@ impl<'a> DomExpressions<'a> {
         };
 
         // Wrap in arrow function: () => _$setAttribute(...)
+        // Use expression form (not block) for concise output
         let arrow_body = FunctionBody {
             span: SPAN,
             directives: OxcVec::new_in(self.allocator),
@@ -861,7 +858,7 @@ impl<'a> DomExpressions<'a> {
 
         let arrow_fn = ArrowFunctionExpression {
             span: SPAN,
-            expression: false,
+            expression: true,  // Use expression form for concise arrow function
             r#async: false,
             params: Box::new_in(
                 FormalParameters {
@@ -2088,10 +2085,12 @@ impl<'a> DomExpressions<'a> {
     }
 
     /// Wrap expressions with _$memo() for reactivity in fragments
+    /// - Call expressions with no args -> _$memo(callee) (unwrap the call)
     /// - Call expressions (except IIFEs, templates, components) -> _$memo(expr)
     /// - Other complex expressions (member access, etc.) -> _$memo(() => expr)
     /// - Simple expressions (identifiers, literals) -> as-is
     fn maybe_wrap_with_memo(&mut self, expr: Expression<'a>) -> Expression<'a> {
+        use oxc_allocator::CloneIn;
         use oxc_ast::ast::*;
 
         match &expr {
@@ -2114,7 +2113,26 @@ impl<'a> DomExpressions<'a> {
                     }
                 }
 
-                // Wrap other call expressions with _$memo
+                // For zero-argument calls, unwrap and pass the callee to memo
+                // This transforms {foo()} to _$memo(foo) so memo can call it reactively
+                let expr_to_wrap = if call_expr.arguments.is_empty() {
+                    // Check if callee is a simple reference (Identifier or MemberExpression)
+                    match &call_expr.callee {
+                        Expression::Identifier(_) | Expression::StaticMemberExpression(_) | Expression::ComputedMemberExpression(_) | Expression::PrivateFieldExpression(_) => {
+                            // Clone the callee and use it as the argument
+                            call_expr.callee.clone_in(self.allocator)
+                        }
+                        _ => {
+                            // For other callees (nested calls, etc.), keep the full call expression
+                            expr
+                        }
+                    }
+                } else {
+                    // Call has arguments, wrap the whole call expression
+                    expr
+                };
+
+                // Wrap with _$memo
                 self.add_import("memo");
                 let memo_fn = IdentifierReference {
                     span: SPAN,
@@ -2123,7 +2141,7 @@ impl<'a> DomExpressions<'a> {
                 };
 
                 let mut memo_args = OxcVec::new_in(self.allocator);
-                memo_args.push(Argument::from(expr));
+                memo_args.push(Argument::from(expr_to_wrap));
 
                 let memo_call = CallExpression {
                     span: SPAN,

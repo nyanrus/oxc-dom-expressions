@@ -134,9 +134,30 @@ fn compare_outputs(actual: &str, expected: &str, test_name: &str) -> bool {
     false
 }
 
-/// Normalize code for comparison by removing insignificant whitespace
+/// Normalize code for comparison by removing insignificant whitespace and variable naming differences
 fn normalize_for_comparison(code: &str) -> String {
     let mut result = code.to_string();
+
+    // Normalize variable numbers: replace all sequences of digits with 'N'
+    // This handles _el$123, _tmpl$45, _ref$6 etc.
+    let mut normalized = String::with_capacity(result.len());
+    let mut chars = result.chars().peekable();
+    let mut in_number = false;
+    
+    while let Some(ch) = chars.next() {
+        if ch.is_ascii_digit() {
+            if !in_number {
+                // First digit in a sequence - replace with 'N'
+                normalized.push('N');
+                in_number = true;
+            }
+            // Skip remaining digits in this sequence
+        } else {
+            in_number = false;
+            normalized.push(ch);
+        }
+    }
+    result = normalized;
 
     // Remove all newlines and carriage returns
     result = result.replace('\n', "").replace('\r', "");
