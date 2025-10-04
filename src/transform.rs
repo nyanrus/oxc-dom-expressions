@@ -472,12 +472,12 @@ impl<'a> DomExpressions<'a> {
                         expr_index += 1;
                     }
                 }
-                SlotType::BoolAttribute(attr_name) => {
+                SlotType::BoolAttribute(_attr_name) => {
                     // Generate setBoolAttribute call
                     self.add_import("setBoolAttribute");
 
                     if expr_index < expressions.len() {
-                        let element_var = if slot.path.is_empty() {
+                        let _element_var = if slot.path.is_empty() {
                             root_var
                         } else {
                             path_to_var
