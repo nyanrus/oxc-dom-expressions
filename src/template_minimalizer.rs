@@ -124,7 +124,7 @@ fn can_omit_quotes(value: &str) -> bool {
     !value.is_empty()
         && value
             .chars()
-            .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.' || c == ':')
+            .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '.' | ':' | '/' | '@' | '+' | '#' | '~'))
 }
 
 #[cfg(test)]
