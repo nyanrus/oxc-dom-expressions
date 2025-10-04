@@ -1,4 +1,29 @@
 //! Static analysis and optimization utilities for DOM expressions
+//!
+//! This module provides template optimization through deduplication and
+//! static analysis. It tracks template usage patterns to identify
+//! opportunities for optimization.
+//!
+//! ## Template Deduplication
+//!
+//! Identical HTML templates are automatically deduplicated, reducing:
+//! - Memory usage at runtime
+//! - Bundle size
+//! - Parse time
+//!
+//! ## Statistics Tracking
+//!
+//! The optimizer collects metrics about template usage:
+//! - Total vs unique templates
+//! - Static vs dynamic templates
+//! - Space saved through deduplication
+//!
+//! ## Example
+//!
+//! ```rust,ignore
+//! let stats = transformer.get_template_stats();
+//! println!("Deduplication ratio: {:.1}%", stats.deduplication_ratio() * 100.0);
+//! ```
 
 use crate::template::Template;
 use std::collections::HashMap;

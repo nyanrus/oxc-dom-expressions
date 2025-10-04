@@ -1,4 +1,25 @@
 //! Utility functions for the DOM expressions transformer
+//!
+//! This module provides helper functions for analyzing JSX syntax and
+//! making transformation decisions:
+//!
+//! - **Element Type Detection**: Distinguish HTML elements from components
+//! - **Event Handler Detection**: Identify and classify event handlers
+//! - **Event Delegation**: Determine which events can be delegated
+//! - **Namespace Handling**: Detect special attribute namespaces
+//!
+//! ## Event Delegation
+//!
+//! Events that are commonly used and bubble can be delegated for better
+//! performance. This module defines which events are delegatable:
+//!
+//! - Mouse events: `click`, `dblclick`, `mousedown`, `mouseup`, etc.
+//! - Keyboard events: `keydown`, `keyup`, `keypress`
+//! - Touch events: `touchstart`, `touchend`, `touchmove`
+//! - Pointer events: `pointerdown`, `pointerup`, `pointermove`
+//!
+//! Non-delegatable events (e.g., `blur`, `focus`, `change`) use direct
+//! event listeners instead.
 
 use oxc_ast::ast::*;
 
