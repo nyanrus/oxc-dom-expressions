@@ -42,7 +42,7 @@
 use oxc_allocator::Vec as OxcVec;
 use oxc_allocator::{Allocator, Box};
 use oxc_ast::ast::*;
-use oxc_span::{Atom, SPAN};
+use oxc_span::SPAN;
 use oxc_traverse::{Traverse, TraverseCtx};
 use std::collections::{HashMap, HashSet};
 
