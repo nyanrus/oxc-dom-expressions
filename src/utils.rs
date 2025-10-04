@@ -180,6 +180,94 @@ pub fn is_void_element(tag_name: &str) -> bool {
     )
 }
 
+/// Decode HTML entities to their Unicode equivalents
+/// This is needed for component/fragment children where HTML entities should be decoded
+pub fn decode_html_entities(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    
+    while let Some(ch) = chars.next() {
+        if ch == '&' {
+            // Try to parse an HTML entity
+            let mut entity = String::new();
+            let mut found_entity = false;
+            
+            // Collect characters until ';' or non-alphanumeric
+            while let Some(&next_ch) = chars.peek() {
+                if next_ch == ';' {
+                    chars.next(); // consume the ';'
+                    found_entity = true;
+                    break;
+                } else if next_ch.is_alphanumeric() || next_ch == '#' {
+                    entity.push(chars.next().unwrap());
+                } else {
+                    break;
+                }
+            }
+            
+            if found_entity {
+                // Try to decode the entity
+                let decoded = match entity.as_str() {
+                    "lt" => '<',
+                    "gt" => '>',
+                    "amp" => '&',
+                    "quot" => '"',
+                    "apos" => '\'',
+                    "nbsp" => '\u{A0}', // non-breaking space
+                    "hellip" => '\u{2026}', // horizontal ellipsis
+                    // Numeric entities
+                    _ if entity.starts_with('#') => {
+                        if let Some(num_str) = entity.strip_prefix('#') {
+                            if let Some(hex_str) = num_str.strip_prefix('x').or_else(|| num_str.strip_prefix('X')) {
+                                // Hexadecimal
+                                if let Ok(code) = u32::from_str_radix(hex_str, 16) {
+                                    char::from_u32(code).unwrap_or('&')
+                                } else {
+                                    result.push('&');
+                                    result.push_str(&entity);
+                                    result.push(';');
+                                    continue;
+                                }
+                            } else {
+                                // Decimal
+                                if let Ok(code) = num_str.parse::<u32>() {
+                                    char::from_u32(code).unwrap_or('&')
+                                } else {
+                                    result.push('&');
+                                    result.push_str(&entity);
+                                    result.push(';');
+                                    continue;
+                                }
+                            }
+                        } else {
+                            result.push('&');
+                            result.push_str(&entity);
+                            result.push(';');
+                            continue;
+                        }
+                    },
+                    _ => {
+                        // Unknown entity, keep as-is
+                        result.push('&');
+                        result.push_str(&entity);
+                        result.push(';');
+                        continue;
+                    }
+                };
+                result.push(decoded);
+            } else {
+                // Not a valid entity, keep the '&' and entity chars
+                result.push('&');
+                result.push_str(&entity);
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+    
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -248,6 +336,16 @@ mod tests {
         assert!(!is_on_prefix_event("onClick"));
 
         assert!(is_on_capture_event("oncapture:Click"));
+    }
+
+    #[test]
+    fn test_decode_html_entities() {
+        assert_eq!(decode_html_entities("&nbsp;&lt;Hi&gt;&nbsp;"), "\u{A0}<Hi>\u{A0}");
+        assert_eq!(decode_html_entities("&amp;&lt;&gt;&quot;&apos;"), "&<>\"'");
+        assert_eq!(decode_html_entities("Search&hellip;"), "Search\u{2026}");
+        assert_eq!(decode_html_entities("plain text"), "plain text");
+        assert_eq!(decode_html_entities("&#60;&#62;"), "<>");
+        assert_eq!(decode_html_entities("&#x3C;&#x3E;"), "<>");
         assert!(!is_on_capture_event("onClick"));
 
         assert_eq!(get_prefix_event_name("on:CustomEvent"), Some("CustomEvent"));

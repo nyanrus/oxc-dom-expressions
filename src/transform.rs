@@ -2281,6 +2281,26 @@ impl<'a> DomExpressions<'a> {
 
         // Add children if present
         if !jsx_elem.children.is_empty() {
+            // Check if we need a getter for children
+            // Getter is needed when we have mixed text and expression children
+            let significant_children: Vec<_> = jsx_elem.children
+                .iter()
+                .filter(|child| match child {
+                    JSXChild::Text(text) => {
+                        let text_value = text.value.as_str();
+                        !text_value.trim().is_empty() 
+                            || (!text_value.contains('\n') && !text_value.is_empty())
+                    }
+                    _ => true,
+                })
+                .collect();
+
+            let has_text = significant_children.iter().any(|child| matches!(child, JSXChild::Text(_)));
+            let has_expression = significant_children.iter().any(|child| {
+                matches!(child, JSXChild::ExpressionContainer(_) | JSXChild::Element(_) | JSXChild::Fragment(_))
+            });
+            let needs_getter = has_text && has_expression && significant_children.len() > 1;
+
             let children_value = self.create_component_children(&jsx_elem.children);
 
             let prop_key = PropertyKey::StaticIdentifier(Box::new_in(
@@ -2291,18 +2311,77 @@ impl<'a> DomExpressions<'a> {
                 self.allocator,
             ));
 
-            properties.push(ObjectPropertyKind::ObjectProperty(Box::new_in(
-                ObjectProperty {
+            if needs_getter {
+                // Create getter: get children() { return [...]; }
+                // Create function body with return statement
+                let return_stmt = Statement::ReturnStatement(Box::new_in(
+                    ReturnStatement {
+                        span: SPAN,
+                        argument: Some(children_value),
+                    },
+                    self.allocator,
+                ));
+
+                let func_body = FunctionBody {
                     span: SPAN,
-                    kind: PropertyKind::Init,
-                    key: prop_key,
-                    value: children_value,
-                    method: false,
-                    shorthand: false,
-                    computed: false,
-                },
-                self.allocator,
-            )));
+                    directives: OxcVec::new_in(self.allocator),
+                    statements: OxcVec::from_iter_in([return_stmt], self.allocator),
+                };
+
+                let getter_fn = Function {
+                    r#type: FunctionType::FunctionExpression,
+                    span: SPAN,
+                    id: None,
+                    generator: false,
+                    r#async: false,
+                    declare: false,
+                    type_parameters: None,
+                    this_param: None,
+                    params: Box::new_in(
+                        FormalParameters {
+                            span: SPAN,
+                            kind: FormalParameterKind::FormalParameter,
+                            items: OxcVec::new_in(self.allocator),
+                            rest: None,
+                        },
+                        self.allocator,
+                    ),
+                    body: Some(Box::new_in(func_body, self.allocator)),
+                    return_type: None,
+                    scope_id: Default::default(),
+                    pure: false,
+                    pife: false,
+                };
+
+                let getter_value = Expression::FunctionExpression(Box::new_in(getter_fn, self.allocator));
+
+                properties.push(ObjectPropertyKind::ObjectProperty(Box::new_in(
+                    ObjectProperty {
+                        span: SPAN,
+                        kind: PropertyKind::Get,
+                        key: prop_key,
+                        value: getter_value,
+                        method: false,
+                        shorthand: false,
+                        computed: false,
+                    },
+                    self.allocator,
+                )));
+            } else {
+                // Regular property
+                properties.push(ObjectPropertyKind::ObjectProperty(Box::new_in(
+                    ObjectProperty {
+                        span: SPAN,
+                        kind: PropertyKind::Init,
+                        key: prop_key,
+                        value: children_value,
+                        method: false,
+                        shorthand: false,
+                        computed: false,
+                    },
+                    self.allocator,
+                )));
+            }
         }
 
         ObjectExpression {
@@ -2315,11 +2394,17 @@ impl<'a> DomExpressions<'a> {
     fn create_component_children(&mut self, children: &OxcVec<'a, JSXChild<'a>>) -> Expression<'a> {
         use oxc_ast::ast::*;
 
-        // Filter out whitespace-only text nodes
+        // Filter out whitespace-only text nodes that contain newlines (formatting whitespace)
+        // Keep whitespace without newlines (content whitespace like single spaces)
         let significant_children: Vec<_> = children
             .iter()
             .filter(|child| match child {
-                JSXChild::Text(text) => !text.value.trim().is_empty(),
+                JSXChild::Text(text) => {
+                    let text_value = text.value.as_str();
+                    // Keep if not empty when trimmed OR if it's whitespace without newlines
+                    !text_value.trim().is_empty() 
+                        || (!text_value.contains('\n') && !text_value.is_empty())
+                }
                 _ => true,
             })
             .collect();
@@ -2361,10 +2446,14 @@ impl<'a> DomExpressions<'a> {
                     text_value
                 };
 
+                // Decode HTML entities for component/fragment children
+                // This converts &nbsp; to \xA0, &lt; to <, etc.
+                let decoded_text = crate::utils::decode_html_entities(output_text);
+
                 Expression::StringLiteral(Box::new_in(
                     StringLiteral {
                         span: SPAN,
-                        value: Atom::from(self.allocator.alloc_str(output_text)),
+                        value: Atom::from(self.allocator.alloc_str(&decoded_text)),
                         raw: None,
                         lone_surrogates: false,
                     },
