@@ -347,6 +347,7 @@ fn build_element_html(
                 path,
                 is_last_child,
                 next_is_expression,
+                num_nodes_added,
             );
 
             // Update count if this child will create a node (marker or actual content)
@@ -371,6 +372,7 @@ fn build_child_html_with_context(
     path: &mut Vec<String>,
     is_last_child: bool,
     next_is_expression: bool,
+    num_nodes_so_far: usize,
 ) {
     match child {
         JSXChild::Text(text) => {
@@ -429,13 +431,15 @@ fn build_child_html_with_context(
                 Some(path.clone())
             } else if !is_last_child {
                 // Next child exists and is static content - it will be our insertion point
-                // Calculate the path where the next static child will be
-                // It will be the next sibling of the current path
-                let mut next_path = path.clone();
-                if next_path.is_empty() {
+                // Calculate the path where the next static child will be based on nodes so far
+                let mut next_path = Vec::new();
+                if num_nodes_so_far == 0 {
                     next_path.push("firstChild".to_string());
                 } else {
-                    next_path.push("nextSibling".to_string());
+                    next_path.push("firstChild".to_string());
+                    for _ in 0..num_nodes_so_far {
+                        next_path.push("nextSibling".to_string());
+                    }
                 }
                 Some(next_path)
             } else {
