@@ -476,11 +476,73 @@ impl<'a> DomExpressions<'a> {
                         expr_index += 1;
                     }
                 }
+                SlotType::BoolAttribute(attr_name) => {
+                    // Generate setBoolAttribute call
+                    self.add_import("setBoolAttribute");
+                    
+                    if expr_index < expressions.len() {
+                        let element_var = if slot.path.is_empty() {
+                            root_var
+                        } else {
+                            path_to_var.get(&slot.path).map(|s| s.as_str()).unwrap_or(root_var)
+                        };
+                        
+                        // For now, generate a simple setBoolAttribute call
+                        // TODO: Implement full setBoolAttribute code generation
+                        expr_index += 1;
+                    }
+                }
+                SlotType::PropAttribute(attr_name) => {
+                    // Generate direct property assignment: element.propName = value;
+                    if expr_index < expressions.len() {
+                        let element_var = if slot.path.is_empty() {
+                            root_var
+                        } else {
+                            path_to_var.get(&slot.path).map(|s| s.as_str()).unwrap_or(root_var)
+                        };
+                        
+                        if let Some(stmt) = self.create_property_assignment(
+                            element_var,
+                            attr_name,
+                            &expressions[expr_index],
+                        ) {
+                            stmts.push(stmt);
+                        }
+                        expr_index += 1;
+                    }
+                }
+                SlotType::AttrAttribute(attr_name) => {
+                    // Generate setAttribute call (without effect wrapper for static values)
+                    self.add_import("setAttribute");
+                    
+                    if expr_index < expressions.len() {
+                        let element_var = if slot.path.is_empty() {
+                            root_var
+                        } else {
+                            path_to_var.get(&slot.path).map(|s| s.as_str()).unwrap_or(root_var)
+                        };
+                        
+                        if let Some(stmt) = self.create_static_set_attribute_call(
+                            element_var,
+                            attr_name,
+                            &expressions[expr_index],
+                        ) {
+                            stmts.push(stmt);
+                        }
+                        expr_index += 1;
+                    }
+                }
+                SlotType::UseDirective(_)
+                | SlotType::StyleProperty(_)
+                | SlotType::ClassName(_) => {
+                    // These slot types not yet fully implemented
+                    if expr_index < expressions.len() {
+                        expr_index += 1;
+                    }
+                }
                 _ => {
                     // Other slot types - for now, just consume the expression if there is one
                     // TODO: Implement full handling for:
-                    // - BoolAttribute, PropAttribute, AttrAttribute
-                    // - UseDirective, StyleProperty, ClassName
                     // - EventHandler, OnEvent, OnCaptureEvent
                     // - Ref, ClassList, StyleObject
                     
@@ -493,12 +555,6 @@ impl<'a> DomExpressions<'a> {
                             | SlotType::Ref
                             | SlotType::ClassList
                             | SlotType::StyleObject
-                            | SlotType::BoolAttribute(_)
-                            | SlotType::PropAttribute(_)
-                            | SlotType::AttrAttribute(_)
-                            | SlotType::UseDirective(_)
-                            | SlotType::StyleProperty(_)
-                            | SlotType::ClassName(_)
                     );
                     
                     if consumes_expression && expr_index < expressions.len() {
@@ -772,6 +828,117 @@ impl<'a> DomExpressions<'a> {
             ExpressionStatement {
                 span: SPAN,
                 expression: Expression::CallExpression(Box::new_in(effect_call, self.allocator)),
+            },
+            self.allocator,
+        )))
+    }
+
+    /// Create a property assignment statement: element.propName = value;
+    fn create_property_assignment(
+        &self,
+        element_var: &str,
+        prop_name: &str,
+        value_expr: &Expression<'a>,
+    ) -> Option<Statement<'a>> {
+        use oxc_allocator::CloneIn;
+        use oxc_ast::ast::*;
+
+        // Create: element.propName = value;
+        let element_ref = IdentifierReference {
+            span: SPAN,
+            name: Atom::from(self.allocator.alloc_str(element_var)),
+            reference_id: None.into(),
+        };
+
+        let prop_ident = IdentifierName {
+            span: SPAN,
+            name: Atom::from(self.allocator.alloc_str(prop_name)),
+        };
+
+        let member_expr = StaticMemberExpression {
+            span: SPAN,
+            object: Expression::Identifier(Box::new_in(element_ref, self.allocator)),
+            property: prop_ident,
+            optional: false,
+        };
+
+        let assignment = AssignmentExpression {
+            span: SPAN,
+            operator: AssignmentOperator::Assign,
+            left: AssignmentTarget::from(SimpleAssignmentTarget::from(
+                MemberExpression::StaticMemberExpression(Box::new_in(member_expr, self.allocator)),
+            )),
+            right: value_expr.clone_in(self.allocator),
+        };
+
+        Some(Statement::ExpressionStatement(Box::new_in(
+            ExpressionStatement {
+                span: SPAN,
+                expression: Expression::AssignmentExpression(Box::new_in(
+                    assignment,
+                    self.allocator,
+                )),
+            },
+            self.allocator,
+        )))
+    }
+
+    /// Create a static setAttribute call (without effect wrapper)
+    fn create_static_set_attribute_call(
+        &self,
+        element_var: &str,
+        attr_name: &str,
+        value_expr: &Expression<'a>,
+    ) -> Option<Statement<'a>> {
+        use oxc_allocator::CloneIn;
+        use oxc_ast::ast::*;
+
+        // Create: _$setAttribute(element, "attr", value)
+        let set_attr_fn = IdentifierReference {
+            span: SPAN,
+            name: Atom::from("_$setAttribute"),
+            reference_id: None.into(),
+        };
+
+        let mut set_attr_args = OxcVec::new_in(self.allocator);
+
+        // First argument: element reference
+        set_attr_args.push(Argument::Identifier(Box::new_in(
+            IdentifierReference {
+                span: SPAN,
+                name: Atom::from(self.allocator.alloc_str(element_var)),
+                reference_id: None.into(),
+            },
+            self.allocator,
+        )));
+
+        // Second argument: attribute name as string
+        set_attr_args.push(Argument::StringLiteral(Box::new_in(
+            StringLiteral {
+                span: SPAN,
+                value: Atom::from(self.allocator.alloc_str(attr_name)),
+                raw: None,
+                lone_surrogates: false,
+            },
+            self.allocator,
+        )));
+
+        // Third argument: value expression
+        set_attr_args.push(Argument::from(value_expr.clone_in(self.allocator)));
+
+        let set_attr_call = CallExpression {
+            span: SPAN,
+            callee: Expression::Identifier(Box::new_in(set_attr_fn, self.allocator)),
+            arguments: set_attr_args,
+            optional: false,
+            type_arguments: None,
+            pure: false,
+        };
+
+        Some(Statement::ExpressionStatement(Box::new_in(
+            ExpressionStatement {
+                span: SPAN,
+                expression: Expression::CallExpression(Box::new_in(set_attr_call, self.allocator)),
             },
             self.allocator,
         )))
