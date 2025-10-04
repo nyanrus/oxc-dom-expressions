@@ -45,6 +45,42 @@ Created a comprehensive naming module within the compat directory to centralize 
 - ✅ Better separation of concerns
 - ✅ Clearer code organization
 
+### 2. Compat Constants Module ✅
+
+Created a constants module to centralize all babel-specific constant values:
+
+**New file**: `src/compat/constants.rs`
+
+**Constants provided:**
+- `BABEL_PURE_COMMENT` / `OXC_PURE_COMMENT` - Pure comment formats
+- `BABEL_INDENT` - Babel indentation (double spaces)
+- `TEMPLATE_VAR_PREFIX` - `_tmpl$`
+- `ELEMENT_VAR_PREFIX` - `_el$`
+- `RUNTIME_FN_PREFIX` - `_$`
+- `DEFAULT_MODULE_NAME` - `solid-js/web`
+- `R_DOM_MODULE_NAME` - `r-dom`
+- `DEFAULT_EFFECT_WRAPPER` - `effect`
+- `DEFAULT_MEMO_WRAPPER` - `memo`
+- `DEFAULT_STATIC_MARKER` - `@once`
+
+**Benefits:**
+- Eliminated magic strings throughout the codebase
+- Single source of truth for babel-specific values
+- Easy to update values in one place
+- Better documentation and discoverability
+- Comprehensive test coverage
+
+**Code changes:**
+- Updated `naming.rs` to use constants for prefixes
+- Updated `output_normalizer.rs` to use PURE comment constants
+- Added tests for all constants
+- Updated documentation
+
+**Result:**
+- ✅ No regression in tests
+- ✅ Cleaner, more maintainable code
+- ✅ Better separation of babel-specific values
+
 ## Previous Changes
 
 ### 1. Created Compat Module ✅
@@ -117,7 +153,8 @@ src/
     ├── mod.rs (enhanced documentation)
     ├── output_normalizer.rs
     ├── import_ordering.rs
-    └── naming.rs (NEW)
+    ├── naming.rs (NEW)
+    └── constants.rs (NEW)
 ```
 
 ## Impact
@@ -146,9 +183,11 @@ All tests maintain the same behavior:
    - Module purposes clearly documented
    - Examples provided where helpful
 
-3. **Improved Naming**
+3. **Improved Naming and Constants**
    - Standard spelling for minimize/minimizer
    - Consistent terminology throughout
+   - Centralized constants for babel-specific values
+   - No magic strings in code
 
 ## Future Refactoring Opportunities
 
@@ -177,11 +216,20 @@ Could create separate test modules:
 
 ## Conclusion
 
-This refactoring successfully:
-- ✅ Separated babel compatibility concerns into dedicated module
-- ✅ Improved naming conventions
-- ✅ Enhanced documentation throughout
+This refactoring successfully achieved:
+- ✅ Separated babel compatibility concerns into dedicated compat module
+- ✅ Created naming and constants modules for better organization
+- ✅ Eliminated magic strings with centralized constants
+- ✅ Improved naming conventions throughout
+- ✅ Enhanced documentation comprehensively
 - ✅ Maintained all existing functionality (no regressions)
-- ✅ Passed all code quality checks
+- ✅ Passed all code quality checks (clippy, fmt, tests)
 
-The codebase is now more maintainable, better documented, and has clearer separation of concerns. The compat module makes it obvious which code exists purely for babel compatibility, making future updates easier.
+**Key Achievements:**
+- **Modularity**: Clear separation between core logic and compatibility code
+- **Maintainability**: Easy to update babel-specific behavior in one place
+- **Readability**: Named constants instead of magic strings
+- **Documentation**: Comprehensive docs with usage examples
+- **Testing**: All compat modules have dedicated unit tests
+
+The codebase is now significantly more maintainable, better documented, and has clearer separation of concerns. The compat module makes it obvious which code exists purely for babel compatibility, making future updates easier. New contributors can quickly understand the architecture and make changes without breaking compatibility.
