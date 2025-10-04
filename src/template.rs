@@ -374,7 +374,63 @@ fn build_element_html(
     }
 }
 
+/// Normalize whitespace in text nodes following HTML/DOM rules:
+/// - If text contains only whitespace including newlines, it's formatting whitespace - skip it
+/// - Otherwise, collapse consecutive whitespace (spaces, tabs, newlines) to single space
+/// - Trim whitespace at edges that include newlines (formatting indentation)
+/// - Preserve simple leading/trailing spaces (important for inline text layout)
+fn normalize_text_whitespace(text: &str) -> String {
+    // Check if this is pure formatting whitespace (contains newlines and is all whitespace)
+    if text.trim().is_empty() && text.contains('\n') {
+        return String::new(); // Will be skipped
+    }
+
+    // Replace runs of whitespace with single space
+    let mut result = String::new();
+    let mut prev_was_whitespace = false;
+
+    for ch in text.chars() {
+        if ch.is_whitespace() {
+            if !prev_was_whitespace {
+                result.push(' ');
+                prev_was_whitespace = true;
+            }
+        } else {
+            result.push(ch);
+            prev_was_whitespace = false;
+        }
+    }
+
+    // Trim leading/trailing whitespace if the original text had newlines at edges
+    // (indicates formatting whitespace, not content whitespace)
+    let has_leading_newline = text
+        .chars()
+        .take_while(|c| c.is_whitespace())
+        .any(|c| c == '\n');
+    let has_trailing_newline = text
+        .chars()
+        .rev()
+        .take_while(|c| c.is_whitespace())
+        .any(|c| c == '\n');
+
+    if has_leading_newline {
+        result = result.trim_start().to_string();
+    }
+    if has_trailing_newline {
+        result = result.trim_end().to_string();
+    }
+
+    result
+}
+
+/// Escape HTML special characters in text content
+/// Only < and & need escaping in text content (> is optional)
+fn escape_html(text: &str) -> String {
+    text.replace('&', "&amp;").replace('<', "&lt;")
+}
+
 /// Build HTML for a JSX child with context about its position
+#[allow(clippy::too_many_arguments)] // All parameters are needed for context tracking
 fn build_child_html_with_context(
     child: &JSXChild,
     html: &mut String,
@@ -389,19 +445,19 @@ fn build_child_html_with_context(
 ) {
     match child {
         JSXChild::Text(text) => {
-            // Static text - escape for template literals
-            // Only escape opening braces to match babel plugin behavior
+            // Static text - normalize whitespace following HTML/DOM rules
             let text_value = text.value.as_str();
 
-            // Skip pure formatting whitespace (newlines + indentation)
-            // BUT preserve inline spaces (e.g., between expressions)
-            if text_value.trim().is_empty() && text_value.contains('\n') {
-                // This is formatting whitespace with newlines - skip it
+            // Normalize whitespace (collapse multiple spaces/newlines to single space, trim)
+            let normalized = normalize_text_whitespace(text_value);
+
+            // Skip if text becomes empty after normalization
+            if normalized.is_empty() {
                 return;
             }
 
-            // Preserve all other text, including spaces
-            let escaped = text_value.replace('\\', "\\\\").replace('{', "\\{");
+            // Escape for template literals - only escape opening braces
+            let escaped = normalized.replace('\\', "\\\\").replace('{', "\\{");
             html.push_str(&escaped);
         }
         JSXChild::Element(elem) => {
@@ -411,13 +467,14 @@ fn build_child_html_with_context(
             // Check if this is a static literal that can be inlined
             match &container.expression {
                 JSXExpression::StringLiteral(string_lit) => {
-                    // Static string - include in template with escaping
-                    // Only escape opening braces to match babel plugin behavior
-                    let escaped = string_lit
-                        .value
-                        .as_str()
-                        .replace('\\', "\\\\")
-                        .replace('{', "\\{");
+                    // Static string - include in template with HTML escaping and template literal escaping
+                    let text_value = string_lit.value.as_str();
+
+                    // First escape HTML special characters (< > &)
+                    let html_escaped = escape_html(text_value);
+
+                    // Then escape for template literals (backslash and opening brace)
+                    let escaped = html_escaped.replace('\\', "\\\\").replace('{', "\\{");
                     html.push_str(&escaped);
                     return;
                 }
@@ -449,9 +506,7 @@ fn build_child_html_with_context(
                 last_marker_path.clone()
             } else if is_first_node && !is_last_child {
                 // First node but not last child - use next node as insertion point
-                let mut next_path = Vec::new();
-                next_path.push("firstChild".to_string());
-                Some(next_path)
+                Some(vec!["firstChild".to_string()])
             } else if is_last_child {
                 // Last child - insert at end
                 None
