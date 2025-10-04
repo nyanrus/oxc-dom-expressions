@@ -46,7 +46,7 @@ use oxc_span::SPAN;
 use oxc_traverse::{Traverse, TraverseCtx};
 use std::collections::{HashMap, HashSet};
 
-use crate::compat::get_import_priority;
+use crate::compat::{get_import_priority, template_var_name, element_var_name};
 use crate::optimizer::{TemplateOptimizer, TemplateStats};
 use crate::options::DomExpressionsOptions;
 use crate::template::{SlotType, Template};
@@ -107,11 +107,7 @@ impl<'a> DomExpressions<'a> {
     /// Generate a unique template variable name
     fn generate_template_var(&mut self) -> String {
         self.template_counter += 1;
-        if self.template_counter == 1 {
-            "_tmpl$".to_string()
-        } else {
-            format!("_tmpl${}", self.template_counter)
-        }
+        template_var_name(self.template_counter)
     }
 
     /// Get or create a template variable for given HTML
@@ -461,7 +457,7 @@ impl<'a> DomExpressions<'a> {
     /// Generate unique element variable name
     fn generate_element_var(&mut self) -> String {
         self.element_counter += 1;
-        format!("_el${}", self.element_counter)
+        element_var_name(self.element_counter)
     }
 
     /// Create runtime calls for dynamic content from extracted expressions
@@ -2224,15 +2220,10 @@ impl<'a> DomExpressions<'a> {
         // Sort template map by variable name to get consistent order (numerically)
         let mut sorted_templates: Vec<_> = self.template_map.iter().collect();
         sorted_templates.sort_by(|a, b| {
-            // Extract the numeric part from variable names like "_tmpl$" or "_tmpl$2"
+            // Extract the numeric part from variable names using compat naming module
+            use crate::compat::naming::extract_template_counter;
             let get_num = |name: &str| -> usize {
-                if name == "_tmpl$" {
-                    1
-                } else {
-                    name.strip_prefix("_tmpl$")
-                        .and_then(|s| s.parse::<usize>().ok())
-                        .unwrap_or(0)
-                }
+                extract_template_counter(name).unwrap_or(0)
             };
             get_num(a.1).cmp(&get_num(b.1))
         });
@@ -3184,8 +3175,9 @@ impl<'a> DomExpressions<'a> {
                 }
 
                 // Check if this is a template or component call - those shouldn't be wrapped
+                use crate::compat::naming::is_template_var;
                 if let Expression::Identifier(ident) = &call_expr.callee {
-                    if ident.name.starts_with("_tmpl$")
+                    if is_template_var(&ident.name)
                         || ident.name.starts_with("_$createComponent")
                     {
                         return expr;

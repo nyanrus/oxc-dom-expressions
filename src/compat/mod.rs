@@ -15,9 +15,12 @@
 //!
 //! - `output_normalizer`: Normalizes generated code to match babel plugin format
 //! - `import_ordering`: Defines import priority order for babel compatibility
+//! - `naming`: Variable naming conventions matching babel plugin output
 
 pub mod import_ordering;
+pub mod naming;
 pub mod output_normalizer;
 
 pub use import_ordering::get_import_priority;
+pub use naming::{element_var_name, template_var_name, runtime_function_name};
 pub use output_normalizer::BabelOutputNormalizer;
