@@ -287,7 +287,8 @@ impl<'a> DomExpressions<'a> {
     ) {
         use oxc_ast::ast::*;
 
-        let root_var = self.generate_element_var();
+        // Root element is always "_el$" without a number
+        let root_var = String::from("_el$");
         let mut path_to_var = std::collections::HashMap::new();
         let mut declarators = OxcVec::new_in(self.allocator);
 
