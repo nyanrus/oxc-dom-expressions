@@ -351,6 +351,8 @@ fn build_element_html(
                 prev_is_expression,
                 num_nodes_added,
                 &mut last_marker_path,
+                &element.children,
+                i,
             );
 
             // Update count if this child will create a node (marker or actual content)
@@ -382,6 +384,8 @@ fn build_child_html_with_context(
     prev_is_expression: bool,
     num_nodes_so_far: usize,
     last_marker_path: &mut Option<Vec<String>>,
+    all_children: &[JSXChild],
+    i: usize,
 ) {
     match child {
         JSXChild::Text(text) => {
@@ -430,19 +434,29 @@ fn build_child_html_with_context(
             }
 
             // Dynamic content - determine marker strategy:
-            // The babel plugin always adds markers for dynamic insertion points.
-            // Adjacent expressions (no whitespace between) share one marker.
-            // Otherwise each expression gets its own marker after it.
+            // The babel plugin minimizes template size by avoiding markers when possible.
+            // Rules:
+            // 1. Adjacent expressions share one marker
+            // 2. If this is the first NODE (num_nodes_so_far == 0), use next node as insertion point
+            // 3. If expression is LAST child, insert at end with null (no marker)
+            // 4. Otherwise, add a marker after the expression
+            
+            // Check if this is the first real node (not counting skipped formatting whitespace)
+            let is_first_node = num_nodes_so_far == 0;
             
             let marker_path = if prev_is_expression && last_marker_path.is_some() {
-                // This expression is immediately adjacent to the previous one
-                // Reuse the same marker that was added for the previous expression
+                // Adjacent to previous expression - reuse marker
                 last_marker_path.clone()
+            } else if is_first_node && !is_last_child {
+                // First node but not last child - use next node as insertion point
+                let mut next_path = Vec::new();
+                next_path.push("firstChild".to_string());
+                Some(next_path)
             } else if is_last_child {
-                // Last child - insert at end with null (no marker needed)
+                // Last child - insert at end
                 None
             } else {
-                // Add a marker after this expression
+                // Middle child - add marker
                 html.push_str("<!>");
                 let marker = Some(path.clone());
                 *last_marker_path = marker.clone();
