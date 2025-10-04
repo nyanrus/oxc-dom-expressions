@@ -137,25 +137,67 @@ impl<'a> DomExpressions<'a> {
     }
 
     /// Create a call expression for cloning a template
+    /// Create a template call expression
+    /// For DOM mode: _tmpl$()
+    /// For SSR mode: _$ssr(_tmpl$)
     fn create_template_call(&self, template_var: &'a str) -> Box<'a, CallExpression<'a>> {
-        // Create identifier for the template variable (e.g., "_tmpl$")
-        let callee_ident = IdentifierReference {
-            span: SPAN,
-            name: Atom::from(template_var),
-            reference_id: None.into(),
-        };
-        let callee = Expression::Identifier(Box::new_in(callee_ident, self.allocator));
+        use oxc_ast::ast::*;
+        use crate::options::GenerateMode;
 
-        let call_expr = CallExpression {
-            span: SPAN,
-            arguments: OxcVec::new_in(self.allocator),
-            callee,
-            optional: false,
-            type_arguments: None,
-            pure: false,
-        };
+        let is_ssr = self.options.generate == GenerateMode::Ssr;
 
-        Box::new_in(call_expr, self.allocator)
+        if is_ssr {
+            // SSR mode: _$ssr(_tmpl$)
+            // Create identifier for the _$ssr function
+            let ssr_fn = IdentifierReference {
+                span: SPAN,
+                name: oxc_span::Atom::from("_$ssr"),
+                reference_id: None.into(),
+            };
+
+            // Create identifier for the template variable argument
+            let template_ident = IdentifierReference {
+                span: SPAN,
+                name: oxc_span::Atom::from(template_var),
+                reference_id: None.into(),
+            };
+
+            let mut args = OxcVec::new_in(self.allocator);
+            args.push(Argument::Identifier(Box::new_in(
+                template_ident,
+                self.allocator,
+            )));
+
+            let call_expr = CallExpression {
+                span: SPAN,
+                arguments: args,
+                callee: Expression::Identifier(Box::new_in(ssr_fn, self.allocator)),
+                optional: false,
+                type_arguments: None,
+                pure: false,
+            };
+
+            Box::new_in(call_expr, self.allocator)
+        } else {
+            // DOM mode: _tmpl$()
+            let callee_ident = IdentifierReference {
+                span: SPAN,
+                name: oxc_span::Atom::from(template_var),
+                reference_id: None.into(),
+            };
+            let callee = Expression::Identifier(Box::new_in(callee_ident, self.allocator));
+
+            let call_expr = CallExpression {
+                span: SPAN,
+                arguments: OxcVec::new_in(self.allocator),
+                callee,
+                optional: false,
+                type_arguments: None,
+                pure: false,
+            };
+
+            Box::new_in(call_expr, self.allocator)
+        }
     }
 
     /// Create an IIFE that clones template and applies dynamic bindings
@@ -1801,6 +1843,7 @@ impl<'a> DomExpressions<'a> {
         let get_priority = |name: &str| -> usize {
             match name {
                 "template" => 0,
+                "ssr" => 0, // SSR import has same priority as template
                 "delegateEvents" => 1,
                 "createComponent" => 2,
                 "memo" => 3,
@@ -1893,6 +1936,7 @@ impl<'a> DomExpressions<'a> {
     /// Create template variable declarations
     fn create_template_declarations(&self) -> Option<Statement<'a>> {
         use oxc_ast::ast::*;
+        use crate::options::GenerateMode;
 
         if self.template_map.is_empty() {
             return None;
@@ -1917,6 +1961,8 @@ impl<'a> DomExpressions<'a> {
             get_num(a.1).cmp(&get_num(b.1))
         });
 
+        let is_ssr = self.options.generate == GenerateMode::Ssr;
+
         for (html, var_name) in sorted_templates {
             // Create the binding pattern for the variable
             let id = BindingPattern {
@@ -1932,46 +1978,61 @@ impl<'a> DomExpressions<'a> {
                 optional: false,
             };
 
-            // Create template literal argument (using backticks)
-            let template_element = TemplateElement {
-                span: SPAN,
-                tail: true,
-                value: TemplateElementValue {
-                    raw: Atom::from(self.allocator.alloc_str(html)),
-                    cooked: Some(Atom::from(self.allocator.alloc_str(html))),
-                },
-                lone_surrogates: false,
-            };
+            // For SSR mode, just assign string literals
+            // For DOM mode, wrap in _$template() call
+            let init_expr = if is_ssr {
+                // SSR: just a string literal
+                let string_lit = StringLiteral {
+                    span: SPAN,
+                    value: Atom::from(self.allocator.alloc_str(html)),
+                    raw: None,
+                    lone_surrogates: false,
+                };
+                Expression::StringLiteral(Box::new_in(string_lit, self.allocator))
+            } else {
+                // DOM: call _$template with template literal
+                let template_element = TemplateElement {
+                    span: SPAN,
+                    tail: true,
+                    value: TemplateElementValue {
+                        raw: Atom::from(self.allocator.alloc_str(html)),
+                        cooked: Some(Atom::from(self.allocator.alloc_str(html))),
+                    },
+                    lone_surrogates: false,
+                };
 
-            let mut elements = OxcVec::new_in(self.allocator);
-            elements.push(template_element);
+                let mut elements = OxcVec::new_in(self.allocator);
+                elements.push(template_element);
 
-            let template_literal = TemplateLiteral {
-                span: SPAN,
-                quasis: elements,
-                expressions: OxcVec::new_in(self.allocator),
-            };
+                let template_literal = TemplateLiteral {
+                    span: SPAN,
+                    quasis: elements,
+                    expressions: OxcVec::new_in(self.allocator),
+                };
 
-            // Create call to _$template(...)
-            let template_fn = IdentifierReference {
-                span: SPAN,
-                name: Atom::from("_$template"),
-                reference_id: None.into(),
-            };
+                // Create call to _$template(...)
+                let template_fn = IdentifierReference {
+                    span: SPAN,
+                    name: Atom::from("_$template"),
+                    reference_id: None.into(),
+                };
 
-            let mut args = OxcVec::new_in(self.allocator);
-            args.push(Argument::TemplateLiteral(Box::new_in(
-                template_literal,
-                self.allocator,
-            )));
+                let mut args = OxcVec::new_in(self.allocator);
+                args.push(Argument::TemplateLiteral(Box::new_in(
+                    template_literal,
+                    self.allocator,
+                )));
 
-            let init_call = CallExpression {
-                span: SPAN,
-                callee: Expression::Identifier(Box::new_in(template_fn, self.allocator)),
-                arguments: args,
-                optional: false,
-                type_arguments: None,
-                pure: true, // Mark as /*#__PURE__*/
+                let call_expr = CallExpression {
+                    span: SPAN,
+                    callee: Expression::Identifier(Box::new_in(template_fn, self.allocator)),
+                    arguments: args,
+                    optional: false,
+                    type_arguments: None,
+                    pure: true, // Mark as /*#__PURE__*/
+                };
+
+                Expression::CallExpression(Box::new_in(call_expr, self.allocator))
             };
 
             // Create variable declarator
@@ -1979,10 +2040,7 @@ impl<'a> DomExpressions<'a> {
                 span: SPAN,
                 kind: VariableDeclarationKind::Var,
                 id,
-                init: Some(Expression::CallExpression(Box::new_in(
-                    init_call,
-                    self.allocator,
-                ))),
+                init: Some(init_expr),
                 definite: false,
             };
 
@@ -2572,6 +2630,8 @@ impl<'a> DomExpressions<'a> {
 
 impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
     fn enter_program(&mut self, _program: &mut Program<'a>, _ctx: &mut TraverseCtx<'a, ()>) {
+        use crate::options::GenerateMode;
+        
         // Entry point for the transformation
         // Initialize state for collecting templates and imports
         self.templates.clear();
@@ -2582,7 +2642,13 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
         self.delegated_events.clear();
 
         // Add the template import (will be needed for any JSX)
-        self.add_import("template");
+        // Use "ssr" for SSR mode, "template" for DOM mode
+        let import_name = if self.options.generate == GenerateMode::Ssr {
+            "ssr"
+        } else {
+            "template"
+        };
+        self.add_import(import_name);
     }
 
     fn exit_program(&mut self, program: &mut Program<'a>, _ctx: &mut TraverseCtx<'a, ()>) {

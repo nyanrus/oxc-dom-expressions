@@ -119,6 +119,59 @@ fn normalize_for_comparison(code: &str) -> String {
     // Remove spaces after opening parens and before closing parens
     result = result.replace("( ", "(").replace(" )", ")");
 
+    // Normalize string literals - convert all to use single quotes for comparison
+    // This handles the difference between '_tmpl$ = "..."' and '_tmpl$ = '...'
+    // We need to be careful to only normalize the outer quotes of string literals
+    result = normalize_string_quotes(&result);
+
+    result
+}
+
+/// Normalize string literal quotes for comparison
+/// Converts double-quoted strings to single-quoted for consistent comparison
+fn normalize_string_quotes(code: &str) -> String {
+    // Simple normalization: for template variable assignments,
+    // just normalize the quote style to be consistent
+    // This is a simplified approach that works for our SSR templates
+    let mut result = String::new();
+    let mut chars = code.chars().peekable();
+    let mut in_string = false;
+    let mut string_quote = '\0';
+    let mut prev_char = '\0';
+    
+    while let Some(ch) = chars.next() {
+        if ch == '"' || ch == '\'' {
+            if !in_string {
+                // Starting a string
+                in_string = true;
+                string_quote = ch;
+                // Always output single quote for consistency
+                result.push('\'');
+            } else if ch == string_quote && prev_char != '\\' {
+                // Ending the string
+                in_string = false;
+                // Always output single quote for consistency
+                result.push('\'');
+            } else {
+                // Quote inside string - keep as is but unescape if it's the alternate quote
+                if ch == '\'' && string_quote == '"' && prev_char == '\\' {
+                    // Remove the backslash we already added and just add the quote
+                    result.pop();
+                    result.push('\'');
+                } else if ch == '"' && string_quote == '\'' && prev_char != '\\' {
+                    // Need to escape double quote when we're using single quotes
+                    result.push('\\');
+                    result.push('"');
+                } else {
+                    result.push(ch);
+                }
+            }
+        } else {
+            result.push(ch);
+        }
+        prev_char = ch;
+    }
+    
     result
 }
 

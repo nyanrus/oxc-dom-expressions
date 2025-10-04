@@ -117,6 +117,8 @@ pub fn build_template_with_options(
     element: &JSXElement,
     options: Option<&crate::options::DomExpressionsOptions>,
 ) -> Template {
+    use crate::options::GenerateMode;
+    
     let mut template = Template {
         html: String::new(),
         dynamic_slots: Vec::new(),
@@ -130,9 +132,16 @@ pub fn build_template_with_options(
         &mut Vec::new(),
     );
 
-    // Apply minimalization if options are provided
+    // Apply minimalization only for DOM mode
+    // SSR needs complete HTML with all closing tags and proper quoting
     if let Some(opts) = options {
-        template.html = crate::template_minimalizer::minimalize_template(&template.html, opts);
+        if opts.generate == GenerateMode::Dom {
+            template.html = crate::template_minimalizer::minimalize_template(&template.html, opts);
+        } else {
+            // SSR mode: unescape braces that were escaped for template literals
+            // Template literals need \{ but string literals don't
+            template.html = template.html.replace("\\{", "{");
+        }
     }
 
     template
