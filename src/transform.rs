@@ -1955,14 +1955,20 @@ impl<'a> DomExpressions<'a> {
 
         match child {
             JSXChild::Text(text) => {
-                // Trim the text value to match babel behavior
+                // Handle text value - only trim if it contains newlines
                 let text_value = text.value.as_str();
-                let trimmed = text_value.trim();
+                let output_text = if text_value.contains('\n') {
+                    // Text with newlines should be trimmed
+                    text_value.trim()
+                } else {
+                    // Text without newlines (like single spaces) should be kept as-is
+                    text_value
+                };
                 
                 Expression::StringLiteral(Box::new_in(
                     StringLiteral {
                         span: SPAN,
-                        value: Atom::from(self.allocator.alloc_str(trimmed)),
+                        value: Atom::from(self.allocator.alloc_str(output_text)),
                         raw: None,
                         lone_surrogates: false,
                     },
