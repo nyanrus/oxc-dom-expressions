@@ -2208,10 +2208,12 @@ impl<'a> DomExpressions<'a> {
                     let prop_value = if let Some(value) = &jsx_attr.value {
                         match value {
                             JSXAttributeValue::StringLiteral(str_lit) => {
+                                // Decode HTML entities in JSX string literal attributes for components
+                                let decoded = crate::utils::decode_html_entities(str_lit.value.as_str());
                                 Expression::StringLiteral(Box::new_in(
                                     StringLiteral {
                                         span: SPAN,
-                                        value: str_lit.value,
+                                        value: Atom::from(self.allocator.alloc_str(&decoded)),
                                         raw: None,
                                         lone_surrogates: false,
                                     },
