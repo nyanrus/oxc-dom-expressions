@@ -1,7 +1,7 @@
-//! Template minimalization for dom-expressions style output
+//! Template minimization for dom-expressions style output
 //!
 //! This module handles the conversion of standard HTML/XML templates to
-//! dom-expressions minimalized format by:
+//! dom-expressions minimized format by:
 //! - Using html_subset_parser to parse well-formed HTML into an AST
 //! - Omitting quotes from attribute values when safe
 //! - Omitting closing tags for elements on the last-child path
@@ -10,8 +10,8 @@
 use crate::html_subset_parser::{parse as parse_html, HtmlNode};
 use crate::options::DomExpressionsOptions;
 
-/// Minimalize an HTML template string according to dom-expressions rules
-pub fn minimalize_template(html: &str, options: &DomExpressionsOptions) -> String {
+/// Minimize an HTML template string according to dom-expressions rules
+pub fn minimize_template(html: &str, options: &DomExpressionsOptions) -> String {
     // Parse HTML into AST
     let nodes = parse_html(html);
 
@@ -152,7 +152,7 @@ mod tests {
         options.omit_quotes = true;
         options.omit_last_closing_tag = false;
 
-        let result = minimalize_template(html, &options);
+        let result = minimize_template(html, &options);
         assert_eq!(result, "<div id=main></div>");
     }
 
@@ -163,7 +163,7 @@ mod tests {
         options.omit_quotes = false;
         options.omit_last_closing_tag = true;
 
-        let result = minimalize_template(html, &options);
+        let result = minimize_template(html, &options);
         // Root div should omit closing, last child span should omit closing
         assert_eq!(result, r#"<div><span>"#);
     }
@@ -175,7 +175,7 @@ mod tests {
         options.omit_quotes = false;
         options.omit_last_closing_tag = true;
 
-        let result = minimalize_template(html, &options);
+        let result = minimize_template(html, &options);
         eprintln!("Input:  {}", html);
         eprintln!("Output: {}", result);
         // Should be: <div><div><button><span>0
@@ -193,7 +193,7 @@ mod tests {
         options.omit_quotes = false;
         options.omit_last_closing_tag = true;
 
-        let result = minimalize_template(html, &options);
+        let result = minimize_template(html, &options);
         // Should stop at noscript because it has mixed content (text + element)
         assert_eq!(result, r#"<div><noscript>"#);
     }

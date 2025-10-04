@@ -78,7 +78,7 @@ pub mod html_subset_parser;
 pub mod optimizer;
 mod options;
 pub mod template;
-pub mod template_minimalizer;
+pub mod template_minimizer;
 mod transform;
 pub mod utils;
 
