@@ -115,19 +115,36 @@ Features like:
 
 ## Architecture Notes
 
-### Compat Module Consideration
+### Compat Module (IMPLEMENTED ✅)
 
-For features that diverge significantly from the original babel plugin behavior, the implementation could be organized into a compatibility module:
+The compatibility layer for babel-plugin-jsx-dom-expressions has been extracted into a dedicated `src/compat/` module:
 
 ```
 src/
   compat/
-    babel_compat.rs  - Babel-specific transformations
-    static_eval.rs   - Static expression evaluation
-    advanced_spread.rs - Full spread implementation
+    mod.rs                - Module definition and exports
+    output_normalizer.rs  - Output formatting for babel compatibility
+    import_ordering.rs    - Import priority order matching babel plugin
 ```
 
-This would separate babel-specific behavior from the core transformation logic.
+This architecture separates babel-specific behavior from the core transformation logic, improving:
+- **Maintainability**: Clear separation of concerns
+- **Testability**: Compat features can be tested independently
+- **Documentation**: Babel-specific quirks are isolated and documented
+- **Future-proofing**: Easy to update or remove compatibility features
+
+The compat module provides:
+1. **Output Normalization**: Converts oxc output to match babel format exactly
+   - Pure comment format conversion (`/* @__PURE__ */` → `/*#__PURE__*/`)
+   - Tab/space normalization
+   - Template variable declaration formatting
+
+2. **Import Ordering**: Defines import priority to match babel plugin output
+   - Template/SSR imports first
+   - Runtime functions in specific order
+   - Unknown imports last
+
+This is a significant improvement over the previous approach where babel-specific code was scattered throughout the transform module.
 
 ### Testing Strategy
 

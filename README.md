@@ -263,9 +263,28 @@ This implementation provides core transformation infrastructure for babel-plugin
 - ✅ Static analysis and performance metrics
 - ✅ Benchmark suite
 - ✅ SSR mode optimization
+- ✅ Compatibility layer for babel plugin output format
 - ⚠️ Full AST replacement (in progress)
 - ⚠️ Import injection (planned)
 - ⚠️ Complete code generation (planned)
+
+## Architecture
+
+The codebase is organized into focused modules for maintainability:
+
+### Core Modules
+- **transform**: Main JSX transformation logic and AST traversal
+- **template**: Template string generation and dynamic slot tracking
+- **codegen**: Code generation utilities for runtime calls
+- **optimizer**: Template optimization and deduplication
+
+### Compatibility Layer
+- **compat**: Ensures compatibility with babel-plugin-jsx-dom-expressions
+  - Output normalization for exact format matching
+  - Import ordering to match babel plugin expectations
+  - Babel-specific transformation behaviors
+
+This separation keeps the core transformation logic clean while maintaining full compatibility with the original babel plugin for fixture tests.
 
 ## Performance
 

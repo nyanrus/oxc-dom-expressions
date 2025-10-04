@@ -138,7 +138,7 @@ pub fn build_template_with_options(
     // SSR needs complete HTML with all closing tags and proper quoting
     if let Some(opts) = options {
         if opts.generate == GenerateMode::Dom {
-            template.html = crate::template_minimalizer::minimalize_template(&template.html, opts);
+            template.html = crate::template_minimizer::minimize_template(&template.html, opts);
         } else {
             // SSR mode: unescape braces that were escaped for template literals
             // Template literals need \{ but string literals don't

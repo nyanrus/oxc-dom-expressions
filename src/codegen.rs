@@ -1,4 +1,27 @@
 //! Code generation utilities for DOM manipulation
+//!
+//! This module provides helper functions for generating JavaScript code
+//! that performs DOM operations at runtime. It handles:
+//!
+//! - Template cloning via `cloneNode()`
+//! - Element reference traversal (`firstChild`, `nextSibling`)
+//! - Dynamic content insertion
+//! - SSR mode code generation
+//!
+//! ## Design Philosophy
+//!
+//! These utilities generate minimal, efficient code that leverages the
+//! template cloning optimization. Instead of creating elements one by one,
+//! the generated code clones a pre-parsed template and then manipulates
+//! specific nodes for dynamic content.
+//!
+//! ## Example
+//!
+//! For a template like `<div><span></span></div>`, this module generates:
+//! ```javascript
+//! const _el$ = _tmpl$.cloneNode(true);
+//! const _el$2 = _el$.firstChild;
+//! ```
 
 use std::fmt::Write;
 

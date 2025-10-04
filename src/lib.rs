@@ -64,19 +64,36 @@
 //!
 //! ## Modules
 //!
-//! - `transform`: Main transformation logic and AST traversal
+//! ### Core Modules
+//!
+//! - [`transform`]: Main transformation logic and AST traversal
 //! - [`template`]: Template string generation and dynamic slot tracking
 //! - [`codegen`]: Code generation utilities for runtime calls
-//! - `options`: Configuration options (re-exported as [`DomExpressionsOptions`])
 //! - [`optimizer`]: Template optimization and statistics
 //! - [`utils`]: Utility functions for component detection, event handling, etc.
+//!
+//! ### Configuration
+//!
+//! - [`options`]: Configuration options (re-exported as [`DomExpressionsOptions`])
+//!
+//! ### Compatibility
+//!
+//! - [`compat`]: Compatibility layer for babel-plugin-jsx-dom-expressions
+//!   - Output normalization for fixture test compatibility
+//!   - Import ordering to match babel plugin output
+//!
+//! ### Internal Modules
+//!
+//! - [`html_subset_parser`]: HTML parsing for template generation
+//! - [`template_minimizer`]: Template minimization and formatting
 
 pub mod codegen;
+pub mod compat;
 pub mod html_subset_parser;
 pub mod optimizer;
 mod options;
 pub mod template;
-pub mod template_minimalizer;
+pub mod template_minimizer;
 mod transform;
 pub mod utils;
 
