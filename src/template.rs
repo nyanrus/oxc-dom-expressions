@@ -224,34 +224,54 @@ fn build_element_html(
     if !is_void_element(&tag_name) {
         let child_path_start = path.len();
 
-        // Track whether we've added any child nodes (for firstChild vs nextSibling)
-        let mut has_previous_node = false;
+        // First pass: determine which children will create nodes
+        let mut will_create_node = Vec::new();
+        for child in &element.children {
+            let creates_node = match child {
+                JSXChild::Text(text) => {
+                    let text_value = text.value.as_str();
+                    !(text_value.trim().is_empty() && text_value.contains('\n'))
+                }
+                JSXChild::Element(_) => true,
+                JSXChild::ExpressionContainer(container) => {
+                    !matches!(
+                        &container.expression,
+                        JSXExpression::StringLiteral(_)
+                            | JSXExpression::NumericLiteral(_)
+                            | JSXExpression::EmptyExpression(_)
+                    )
+                }
+                JSXChild::Fragment(_) | JSXChild::Spread(_) => false,
+            };
+            will_create_node.push(creates_node);
+        }
 
+        // Second pass: process children and track paths
+        let mut num_nodes_added = 0;
+        
         for (i, child) in element.children.iter().enumerate() {
-            // Check if this is the last child
             let is_last_child = i == element.children.len() - 1;
-
-            // Check if next child is an expression (for marker logic)
             let next_is_expression = if i + 1 < element.children.len() {
                 matches!(element.children[i + 1], JSXChild::ExpressionContainer(_))
             } else {
                 false
             };
 
-            // Before processing child, update path based on whether this is first node or not
-            if !has_previous_node {
-                // This is the first actual DOM node
-                path.push("firstChild".to_string());
-                has_previous_node = true;
+            // Calculate the path for this child based on nodes added so far
+            let mut child_path = Vec::new();
+            if num_nodes_added == 0 {
+                child_path.push("firstChild".to_string());
             } else {
-                // We've had previous nodes, so this is a nextSibling
-                if let Some(last) = path.last_mut() {
-                    *last = "nextSibling".to_string();
+                child_path.push("firstChild".to_string());
+                for _ in 0..num_nodes_added {
+                    child_path.push("nextSibling".to_string());
                 }
             }
 
-            // Process the child - this may add markers or elements to HTML
-            // and will add dynamic slots as needed
+            // Set the path for processing this child
+            *path = child_path.clone();
+
+            // Process the child
             build_child_html_with_context(
                 child,
                 html,
@@ -260,6 +280,11 @@ fn build_element_html(
                 is_last_child,
                 next_is_expression,
             );
+
+            // Update count if this child will create a node (marker or actual content)
+            if will_create_node[i] {
+                num_nodes_added += 1;
+            }
         }
 
         // Restore path
@@ -277,7 +302,7 @@ fn build_child_html_with_context(
     slots: &mut Vec<DynamicSlot>,
     path: &mut Vec<String>,
     is_last_child: bool,
-    _next_is_expression: bool,
+    next_is_expression: bool,
 ) {
     match child {
         JSXChild::Text(text) => {
@@ -325,14 +350,28 @@ fn build_child_html_with_context(
                 _ => {}
             }
 
-            // Dynamic content - add marker if not the last child
-            // The marker helps position where to insert the dynamic content
-            let marker_path = if !is_last_child {
+            // Dynamic content - determine marker strategy:
+            // - If next child is also an expression: add <!> marker at current position
+            // - If next child is static content: use that static content as the insertion point
+            // - If this is the last child: no marker (insert at end)
+            let marker_path = if next_is_expression {
+                // Next child is also dynamic - add a marker comment
                 html.push_str("<!>");
                 // The marker we just added is at the current path
                 Some(path.clone())
+            } else if !is_last_child {
+                // Next child exists and is static content - it will be our insertion point
+                // Calculate the path where the next static child will be
+                // It will be the next sibling of the current path
+                let mut next_path = path.clone();
+                if next_path.is_empty() {
+                    next_path.push("firstChild".to_string());
+                } else {
+                    next_path.push("nextSibling".to_string());
+                }
+                Some(next_path)
             } else {
-                // No marker for trailing expressions
+                // This is the last child - no marker needed (insert at end)
                 None
             };
 

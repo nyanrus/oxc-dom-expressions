@@ -252,32 +252,52 @@ impl<'a> DomExpressions<'a> {
         // First declarator: var _el$ = _tmpl$()
         declarators.push(self.create_root_element_declarator(&root_var, template_var));
 
-        // Generate element references for each dynamic slot
-        let mut created_refs = std::collections::HashSet::new();
-
+        // Collect all paths (including intermediate paths) we need to create
+        let mut all_paths = std::collections::HashSet::new();
+        
         for slot in &template.dynamic_slots {
-            // Generate reference for slot path if needed
-            if !slot.path.is_empty() && !created_refs.contains(&slot.path) {
-                created_refs.insert(slot.path.clone());
-                let elem_var = self.generate_element_var();
-                path_to_var.insert(slot.path.clone(), elem_var.clone());
-                declarators
-                    .push(self.create_element_ref_declarator(&elem_var, &root_var, &slot.path));
-            }
-
-            // Generate reference for marker path if needed
-            if let Some(marker_path) = &slot.marker_path {
-                if !marker_path.is_empty() && !created_refs.contains(marker_path) {
-                    created_refs.insert(marker_path.clone());
-                    let elem_var = self.generate_element_var();
-                    path_to_var.insert(marker_path.clone(), elem_var.clone());
-                    declarators.push(self.create_element_ref_declarator(
-                        &elem_var,
-                        &root_var,
-                        marker_path,
-                    ));
+            // Add intermediate paths for slot path
+            if !slot.path.is_empty() {
+                for i in 1..=slot.path.len() {
+                    all_paths.insert(slot.path[..i].to_vec());
                 }
             }
+
+            // Add intermediate paths for marker path
+            if let Some(marker_path) = &slot.marker_path {
+                if !marker_path.is_empty() {
+                    for i in 1..=marker_path.len() {
+                        all_paths.insert(marker_path[..i].to_vec());
+                    }
+                }
+            }
+        }
+
+        // Sort paths by length to ensure we create parent references before children
+        let mut sorted_paths: Vec<_> = all_paths.into_iter().collect();
+        sorted_paths.sort_by_key(|path| path.len());
+
+        // Generate element references for each path
+        for path in sorted_paths {
+            let elem_var = self.generate_element_var();
+            path_to_var.insert(path.clone(), elem_var.clone());
+            
+            // For intermediate references, use the previous reference as base
+            let base_var = if path.len() == 1 {
+                &root_var
+            } else {
+                // Get the parent path and its variable
+                let parent_path = &path[..path.len() - 1];
+                path_to_var.get(parent_path).unwrap_or(&root_var)
+            };
+            
+            // Create reference from parent
+            let single_step_path = vec![path.last().unwrap().clone()];
+            declarators.push(self.create_element_ref_declarator(
+                &elem_var,
+                base_var,
+                &single_step_path,
+            ));
         }
 
         let var_decl = VariableDeclaration {
@@ -1351,88 +1371,9 @@ impl<'a> DomExpressions<'a> {
 
     /// Clone an expression (deep copy)
     fn clone_expression(&self, expr: &Expression<'a>) -> Expression<'a> {
-        use oxc_ast::ast::*;
-
-        match expr {
-            Expression::Identifier(ident) => Expression::Identifier(Box::new_in(
-                IdentifierReference {
-                    span: SPAN,
-                    name: ident.name,
-                    reference_id: None.into(),
-                },
-                self.allocator,
-            )),
-            Expression::StringLiteral(str_lit) => Expression::StringLiteral(Box::new_in(
-                StringLiteral {
-                    span: SPAN,
-                    value: str_lit.value,
-                    raw: None,
-                    lone_surrogates: false,
-                },
-                self.allocator,
-            )),
-            Expression::BooleanLiteral(bool_lit) => Expression::BooleanLiteral(Box::new_in(
-                BooleanLiteral {
-                    span: SPAN,
-                    value: bool_lit.value,
-                },
-                self.allocator,
-            )),
-            Expression::NumericLiteral(num_lit) => Expression::NumericLiteral(Box::new_in(
-                NumericLiteral {
-                    span: SPAN,
-                    value: num_lit.value,
-                    raw: num_lit.raw,
-                    base: num_lit.base,
-                },
-                self.allocator,
-            )),
-            Expression::StaticMemberExpression(static_member) => {
-                let object = self.clone_expression(&static_member.object);
-                Expression::StaticMemberExpression(Box::new_in(
-                    StaticMemberExpression {
-                        span: SPAN,
-                        object,
-                        property: IdentifierName {
-                            span: SPAN,
-                            name: static_member.property.name,
-                        },
-                        optional: static_member.optional,
-                    },
-                    self.allocator,
-                ))
-            }
-            Expression::ComputedMemberExpression(computed_member) => {
-                let object = self.clone_expression(&computed_member.object);
-                let expression = self.clone_expression(&computed_member.expression);
-                Expression::ComputedMemberExpression(Box::new_in(
-                    ComputedMemberExpression {
-                        span: SPAN,
-                        object,
-                        expression,
-                        optional: computed_member.optional,
-                    },
-                    self.allocator,
-                ))
-            }
-            Expression::BinaryExpression(bin_expr) => {
-                let left = self.clone_expression(&bin_expr.left);
-                let right = self.clone_expression(&bin_expr.right);
-                Expression::BinaryExpression(Box::new_in(
-                    BinaryExpression {
-                        span: SPAN,
-                        left,
-                        operator: bin_expr.operator,
-                        right,
-                    },
-                    self.allocator,
-                ))
-            }
-            _ => {
-                // For other expression types, return a null literal for now
-                Expression::NullLiteral(Box::new_in(NullLiteral { span: SPAN }, self.allocator))
-            }
-        }
+        use oxc_allocator::CloneIn;
+        // Use CloneIn trait for deep cloning
+        expr.clone_in(self.allocator)
     }
 }
 
