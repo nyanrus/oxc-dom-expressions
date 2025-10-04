@@ -81,7 +81,7 @@ impl<'a> DomExpressions<'a> {
             templates: Vec::new(),
             template_map: HashMap::new(),
             template_counter: 0,
-            element_counter: 1, // Start at 1 so first child is _el$2 (root is _el$ without number)
+            element_counter: 0, // Start at 0, first call to generate_element_var will return _el$1
             required_imports: Vec::new(),
             delegated_events: HashSet::new(),
             optimizer: TemplateOptimizer::new(),
@@ -287,12 +287,12 @@ impl<'a> DomExpressions<'a> {
     ) {
         use oxc_ast::ast::*;
 
-        // Root element is always "_el$" without a number
-        let root_var = String::from("_el$");
+        // Generate numbered root element variable (e.g., _el$1, _el$2, etc.)
+        let root_var = self.generate_element_var();
         let mut path_to_var = std::collections::HashMap::new();
         let mut declarators = OxcVec::new_in(self.allocator);
 
-        // First declarator: var _el$ = _tmpl$()
+        // First declarator: var _el$1 = _tmpl$()
         declarators.push(self.create_root_element_declarator(&root_var, template_var));
 
         // Collect all paths (including intermediate paths) we need to create
