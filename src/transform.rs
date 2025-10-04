@@ -618,26 +618,100 @@ impl<'a> DomExpressions<'a> {
 
                         let handler_expr = &expressions[expr_index];
 
-                        // For now, handle simple (non-array) handlers
-                        // TODO: Add support for array form [handler] and [handler, data]
-                        if should_delegate {
-                            // Simple delegated handler
-                            if let Some(stmt) = self.create_delegated_event_handler(
-                                element_var,
-                                event_name,
-                                handler_expr,
-                            ) {
-                                stmts.push(stmt);
+                        // Check if handler is an array expression
+                        let is_array = matches!(handler_expr, Expression::ArrayExpression(_));
+
+                        if is_array {
+                            // Handle array form [handler] or [handler, data]
+                            if let Expression::ArrayExpression(arr) = handler_expr {
+                                let handler = arr.elements.first().and_then(|e| match e {
+                                    oxc_ast::ast::ArrayExpressionElement::SpreadElement(_) => None,
+                                    oxc_ast::ast::ArrayExpressionElement::Elision(_) => None,
+                                    _ => e.as_expression(),
+                                });
+                                let data = arr.elements.get(1).and_then(|e| match e {
+                                    oxc_ast::ast::ArrayExpressionElement::SpreadElement(_) => None,
+                                    oxc_ast::ast::ArrayExpressionElement::Elision(_) => None,
+                                    _ => e.as_expression(),
+                                });
+
+                                if let Some(handler) = handler {
+                                    if should_delegate {
+                                        // Delegated event with optional data
+                                        if let Some(data) = data {
+                                            // Generate: el.$$event = handler; el.$$eventData = data;
+                                            if let Some(stmt) = self.create_delegated_event_handler(
+                                                element_var,
+                                                event_name,
+                                                handler,
+                                            ) {
+                                                stmts.push(stmt);
+                                            }
+                                            if let Some(stmt) = self.create_delegated_event_data(
+                                                element_var,
+                                                event_name,
+                                                data,
+                                            ) {
+                                                stmts.push(stmt);
+                                            }
+                                        } else {
+                                            // Just [handler] with no data
+                                            if let Some(stmt) = self.create_delegated_event_handler(
+                                                element_var,
+                                                event_name,
+                                                handler,
+                                            ) {
+                                                stmts.push(stmt);
+                                            }
+                                        }
+                                    } else {
+                                        // Non-delegated event with optional data
+                                        if let Some(data) = data {
+                                            // Generate: el.addEventListener("event", e => handler(data, e))
+                                            let wrapper = self.create_event_wrapper(handler, data);
+                                            if let Some(stmt) = self.create_add_event_listener(
+                                                element_var,
+                                                event_name,
+                                                &wrapper,
+                                                false,
+                                            ) {
+                                                stmts.push(stmt);
+                                            }
+                                        } else {
+                                            // Just [handler] with no data - treat as regular handler
+                                            if let Some(stmt) = self.create_add_event_listener(
+                                                element_var,
+                                                event_name,
+                                                handler,
+                                                false,
+                                            ) {
+                                                stmts.push(stmt);
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         } else {
-                            // Simple non-delegated handler
-                            if let Some(stmt) = self.create_add_event_listener(
-                                element_var,
-                                event_name,
-                                handler_expr,
-                                false,
-                            ) {
-                                stmts.push(stmt);
+                            // Regular (non-array) handler
+                            if should_delegate {
+                                // Simple delegated handler
+                                if let Some(stmt) = self.create_delegated_event_handler(
+                                    element_var,
+                                    event_name,
+                                    handler_expr,
+                                ) {
+                                    stmts.push(stmt);
+                                }
+                            } else {
+                                // Simple non-delegated handler
+                                if let Some(stmt) = self.create_add_event_listener(
+                                    element_var,
+                                    event_name,
+                                    handler_expr,
+                                    false,
+                                ) {
+                                    stmts.push(stmt);
+                                }
                             }
                         }
                         expr_index += 1;
@@ -1752,6 +1826,105 @@ impl<'a> DomExpressions<'a> {
             },
             self.allocator,
         )))
+    }
+
+    /// Create a wrapper function for event handlers with data: e => handler(data, e)
+    fn create_event_wrapper(
+        &self,
+        handler: &Expression<'a>,
+        data: &Expression<'a>,
+    ) -> Expression<'a> {
+        use oxc_allocator::CloneIn;
+        use oxc_ast::ast::*;
+
+        // Create parameter: e
+        let event_param = FormalParameter {
+            span: SPAN,
+            decorators: OxcVec::new_in(self.allocator),
+            pattern: BindingPattern {
+                kind: BindingPatternKind::BindingIdentifier(Box::new_in(
+                    BindingIdentifier {
+                        span: SPAN,
+                        name: Atom::from("e"),
+                        symbol_id: None.into(),
+                    },
+                    self.allocator,
+                )),
+                type_annotation: None,
+                optional: false,
+            },
+            accessibility: None,
+            readonly: false,
+            r#override: false,
+        };
+
+        let mut params = OxcVec::new_in(self.allocator);
+        params.push(event_param);
+
+        // Create call: handler(data, e)
+        let mut call_args = OxcVec::new_in(self.allocator);
+        call_args.push(Argument::from(data.clone_in(self.allocator)));
+        call_args.push(Argument::from(Expression::Identifier(Box::new_in(
+            IdentifierReference {
+                span: SPAN,
+                name: Atom::from("e"),
+                reference_id: None.into(),
+            },
+            self.allocator,
+        ))));
+
+        let call_expr = CallExpression {
+            span: SPAN,
+            callee: handler.clone_in(self.allocator),
+            arguments: call_args,
+            optional: false,
+            type_arguments: None,
+            pure: false,
+        };
+
+        // Create arrow function: e => handler(data, e)
+        let arrow_fn = ArrowFunctionExpression {
+            span: SPAN,
+            expression: true, // Expression body, not block
+            r#async: false,
+            params: Box::new_in(
+                FormalParameters {
+                    span: SPAN,
+                    kind: FormalParameterKind::ArrowFormalParameters,
+                    items: params,
+                    rest: None,
+                },
+                self.allocator,
+            ),
+            body: Box::new_in(
+                FunctionBody {
+                    span: SPAN,
+                    directives: OxcVec::new_in(self.allocator),
+                    statements: {
+                        let mut stmts = OxcVec::new_in(self.allocator);
+                        stmts.push(Statement::ExpressionStatement(Box::new_in(
+                            ExpressionStatement {
+                                span: SPAN,
+                                expression: Expression::CallExpression(Box::new_in(
+                                    call_expr,
+                                    self.allocator,
+                                )),
+                            },
+                            self.allocator,
+                        )));
+                        stmts
+                    },
+                },
+                self.allocator,
+            ),
+            type_parameters: None,
+            return_type: None,
+            scope_id: None.into(),
+            pure: false,
+            pife: false,
+        };
+
+        Expression::ArrowFunctionExpression(Box::new_in(arrow_fn, self.allocator))
     }
 
     /// Create _$addEventListener helper call
