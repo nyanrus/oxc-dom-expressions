@@ -81,7 +81,7 @@ impl<'a> DomExpressions<'a> {
             templates: Vec::new(),
             template_map: HashMap::new(),
             template_counter: 0,
-            element_counter: 1, // Start at 1 so first child is _el$2 (root is _el$ without number)
+            element_counter: 0, // Start at 0, first call to generate_element_var will return _el$1
             required_imports: Vec::new(),
             delegated_events: HashSet::new(),
             optimizer: TemplateOptimizer::new(),
@@ -141,8 +141,8 @@ impl<'a> DomExpressions<'a> {
     /// For DOM mode: _tmpl$()
     /// For SSR mode: _$ssr(_tmpl$)
     fn create_template_call(&self, template_var: &'a str) -> Box<'a, CallExpression<'a>> {
-        use oxc_ast::ast::*;
         use crate::options::GenerateMode;
+        use oxc_ast::ast::*;
 
         let is_ssr = self.options.generate == GenerateMode::Ssr;
 
@@ -287,12 +287,12 @@ impl<'a> DomExpressions<'a> {
     ) {
         use oxc_ast::ast::*;
 
-        // Root element is always "_el$" without a number
-        let root_var = String::from("_el$");
+        // Generate numbered root element variable (e.g., _el$1, _el$2, etc.)
+        let root_var = self.generate_element_var();
         let mut path_to_var = std::collections::HashMap::new();
         let mut declarators = OxcVec::new_in(self.allocator);
 
-        // First declarator: var _el$ = _tmpl$()
+        // First declarator: var _el$1 = _tmpl$()
         declarators.push(self.create_root_element_declarator(&root_var, template_var));
 
         // Collect all paths (including intermediate paths) we need to create
@@ -618,26 +618,100 @@ impl<'a> DomExpressions<'a> {
 
                         let handler_expr = &expressions[expr_index];
 
-                        // For now, handle simple (non-array) handlers
-                        // TODO: Add support for array form [handler] and [handler, data]
-                        if should_delegate {
-                            // Simple delegated handler
-                            if let Some(stmt) = self.create_delegated_event_handler(
-                                element_var,
-                                event_name,
-                                handler_expr,
-                            ) {
-                                stmts.push(stmt);
+                        // Check if handler is an array expression
+                        let is_array = matches!(handler_expr, Expression::ArrayExpression(_));
+
+                        if is_array {
+                            // Handle array form [handler] or [handler, data]
+                            if let Expression::ArrayExpression(arr) = handler_expr {
+                                let handler = arr.elements.first().and_then(|e| match e {
+                                    oxc_ast::ast::ArrayExpressionElement::SpreadElement(_) => None,
+                                    oxc_ast::ast::ArrayExpressionElement::Elision(_) => None,
+                                    _ => e.as_expression(),
+                                });
+                                let data = arr.elements.get(1).and_then(|e| match e {
+                                    oxc_ast::ast::ArrayExpressionElement::SpreadElement(_) => None,
+                                    oxc_ast::ast::ArrayExpressionElement::Elision(_) => None,
+                                    _ => e.as_expression(),
+                                });
+
+                                if let Some(handler) = handler {
+                                    if should_delegate {
+                                        // Delegated event with optional data
+                                        if let Some(data) = data {
+                                            // Generate: el.$$event = handler; el.$$eventData = data;
+                                            if let Some(stmt) = self.create_delegated_event_handler(
+                                                element_var,
+                                                event_name,
+                                                handler,
+                                            ) {
+                                                stmts.push(stmt);
+                                            }
+                                            if let Some(stmt) = self.create_delegated_event_data(
+                                                element_var,
+                                                event_name,
+                                                data,
+                                            ) {
+                                                stmts.push(stmt);
+                                            }
+                                        } else {
+                                            // Just [handler] with no data
+                                            if let Some(stmt) = self.create_delegated_event_handler(
+                                                element_var,
+                                                event_name,
+                                                handler,
+                                            ) {
+                                                stmts.push(stmt);
+                                            }
+                                        }
+                                    } else {
+                                        // Non-delegated event with optional data
+                                        if let Some(data) = data {
+                                            // Generate: el.addEventListener("event", e => handler(data, e))
+                                            let wrapper = self.create_event_wrapper(handler, data);
+                                            if let Some(stmt) = self.create_add_event_listener(
+                                                element_var,
+                                                event_name,
+                                                &wrapper,
+                                                false,
+                                            ) {
+                                                stmts.push(stmt);
+                                            }
+                                        } else {
+                                            // Just [handler] with no data - treat as regular handler
+                                            if let Some(stmt) = self.create_add_event_listener(
+                                                element_var,
+                                                event_name,
+                                                handler,
+                                                false,
+                                            ) {
+                                                stmts.push(stmt);
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         } else {
-                            // Simple non-delegated handler
-                            if let Some(stmt) = self.create_add_event_listener(
-                                element_var,
-                                event_name,
-                                handler_expr,
-                                false,
-                            ) {
-                                stmts.push(stmt);
+                            // Regular (non-array) handler
+                            if should_delegate {
+                                // Simple delegated handler
+                                if let Some(stmt) = self.create_delegated_event_handler(
+                                    element_var,
+                                    event_name,
+                                    handler_expr,
+                                ) {
+                                    stmts.push(stmt);
+                                }
+                            } else {
+                                // Simple non-delegated handler
+                                if let Some(stmt) = self.create_add_event_listener(
+                                    element_var,
+                                    event_name,
+                                    handler_expr,
+                                    false,
+                                ) {
+                                    stmts.push(stmt);
+                                }
                             }
                         }
                         expr_index += 1;
@@ -716,7 +790,7 @@ impl<'a> DomExpressions<'a> {
                 SlotType::ClassName(class_name) => {
                     // Generate className call
                     self.add_import("className");
-                    
+
                     if expr_index < expressions.len() {
                         let element_var = if slot.path.is_empty() {
                             root_var
@@ -776,7 +850,9 @@ impl<'a> DomExpressions<'a> {
                                 .unwrap_or(root_var)
                         };
 
-                        if let Some(stmt) = self.create_ref_call(element_var, &expressions[expr_index]) {
+                        if let Some(stmt) =
+                            self.create_ref_call(element_var, &expressions[expr_index])
+                        {
                             stmts.push(stmt);
                         }
                         expr_index += 1;
@@ -796,7 +872,9 @@ impl<'a> DomExpressions<'a> {
                                 .unwrap_or(root_var)
                         };
 
-                        if let Some(stmt) = self.create_class_list_call(element_var, &expressions[expr_index]) {
+                        if let Some(stmt) =
+                            self.create_class_list_call(element_var, &expressions[expr_index])
+                        {
                             stmts.push(stmt);
                         }
                         expr_index += 1;
@@ -816,7 +894,9 @@ impl<'a> DomExpressions<'a> {
                                 .unwrap_or(root_var)
                         };
 
-                        if let Some(stmt) = self.create_style_object_call(element_var, &expressions[expr_index]) {
+                        if let Some(stmt) =
+                            self.create_style_object_call(element_var, &expressions[expr_index])
+                        {
                             stmts.push(stmt);
                         }
                         expr_index += 1;
@@ -825,9 +905,22 @@ impl<'a> DomExpressions<'a> {
                 SlotType::Spread => {
                     // Spread attributes - generate _$spread call
                     self.add_import("spread");
-                    // TODO: Implement spread attribute handling
-                    // For now, just consume the expression
+
                     if expr_index < expressions.len() {
+                        let element_var = if slot.path.is_empty() {
+                            root_var
+                        } else {
+                            path_to_var
+                                .get(&slot.path)
+                                .map(|s| s.as_str())
+                                .unwrap_or(root_var)
+                        };
+
+                        if let Some(stmt) =
+                            self.create_spread_call(element_var, &expressions[expr_index])
+                        {
+                            stmts.push(stmt);
+                        }
                         expr_index += 1;
                     }
                 }
@@ -1098,7 +1191,10 @@ impl<'a> DomExpressions<'a> {
             Some(Statement::ExpressionStatement(Box::new_in(
                 ExpressionStatement {
                     span: SPAN,
-                    expression: Expression::CallExpression(Box::new_in(effect_call, self.allocator)),
+                    expression: Expression::CallExpression(Box::new_in(
+                        effect_call,
+                        self.allocator,
+                    )),
                 },
                 self.allocator,
             )))
@@ -1239,7 +1335,10 @@ impl<'a> DomExpressions<'a> {
             Some(Statement::ExpressionStatement(Box::new_in(
                 ExpressionStatement {
                     span: SPAN,
-                    expression: Expression::CallExpression(Box::new_in(effect_call, self.allocator)),
+                    expression: Expression::CallExpression(Box::new_in(
+                        effect_call,
+                        self.allocator,
+                    )),
                 },
                 self.allocator,
             )))
@@ -1743,6 +1842,105 @@ impl<'a> DomExpressions<'a> {
         )))
     }
 
+    /// Create a wrapper function for event handlers with data: e => handler(data, e)
+    fn create_event_wrapper(
+        &self,
+        handler: &Expression<'a>,
+        data: &Expression<'a>,
+    ) -> Expression<'a> {
+        use oxc_allocator::CloneIn;
+        use oxc_ast::ast::*;
+
+        // Create parameter: e
+        let event_param = FormalParameter {
+            span: SPAN,
+            decorators: OxcVec::new_in(self.allocator),
+            pattern: BindingPattern {
+                kind: BindingPatternKind::BindingIdentifier(Box::new_in(
+                    BindingIdentifier {
+                        span: SPAN,
+                        name: Atom::from("e"),
+                        symbol_id: None.into(),
+                    },
+                    self.allocator,
+                )),
+                type_annotation: None,
+                optional: false,
+            },
+            accessibility: None,
+            readonly: false,
+            r#override: false,
+        };
+
+        let mut params = OxcVec::new_in(self.allocator);
+        params.push(event_param);
+
+        // Create call: handler(data, e)
+        let mut call_args = OxcVec::new_in(self.allocator);
+        call_args.push(Argument::from(data.clone_in(self.allocator)));
+        call_args.push(Argument::from(Expression::Identifier(Box::new_in(
+            IdentifierReference {
+                span: SPAN,
+                name: Atom::from("e"),
+                reference_id: None.into(),
+            },
+            self.allocator,
+        ))));
+
+        let call_expr = CallExpression {
+            span: SPAN,
+            callee: handler.clone_in(self.allocator),
+            arguments: call_args,
+            optional: false,
+            type_arguments: None,
+            pure: false,
+        };
+
+        // Create arrow function: e => handler(data, e)
+        let arrow_fn = ArrowFunctionExpression {
+            span: SPAN,
+            expression: true, // Expression body, not block
+            r#async: false,
+            params: Box::new_in(
+                FormalParameters {
+                    span: SPAN,
+                    kind: FormalParameterKind::ArrowFormalParameters,
+                    items: params,
+                    rest: None,
+                },
+                self.allocator,
+            ),
+            body: Box::new_in(
+                FunctionBody {
+                    span: SPAN,
+                    directives: OxcVec::new_in(self.allocator),
+                    statements: {
+                        let mut stmts = OxcVec::new_in(self.allocator);
+                        stmts.push(Statement::ExpressionStatement(Box::new_in(
+                            ExpressionStatement {
+                                span: SPAN,
+                                expression: Expression::CallExpression(Box::new_in(
+                                    call_expr,
+                                    self.allocator,
+                                )),
+                            },
+                            self.allocator,
+                        )));
+                        stmts
+                    },
+                },
+                self.allocator,
+            ),
+            type_parameters: None,
+            return_type: None,
+            scope_id: None.into(),
+            pure: false,
+            pife: false,
+        };
+
+        Expression::ArrowFunctionExpression(Box::new_in(arrow_fn, self.allocator))
+    }
+
     /// Create _$addEventListener helper call
     fn create_add_event_listener_helper(
         &self,
@@ -1949,7 +2147,8 @@ impl<'a> DomExpressions<'a> {
 
         let mut statements = Vec::new();
 
-        // Define import priority order (lower number = higher priority)
+        // Define import priority order to match babel plugin output
+        // This ordering is based on the fixture test expectations
         let get_priority = |name: &str| -> usize {
             match name {
                 "template" => 0,
@@ -1957,27 +2156,28 @@ impl<'a> DomExpressions<'a> {
                 "delegateEvents" => 1,
                 "createComponent" => 2,
                 "memo" => 3,
-                "For" => 4,
-                "Show" => 5,
-                "Suspense" => 6,
-                "SuspenseList" => 7,
-                "Switch" => 8,
-                "Match" => 9,
-                "Index" => 10,
-                "ErrorBoundary" => 11,
-                "mergeProps" => 12,
-                "spread" => 13,
-                "use" => 14,
-                "insert" => 15,
-                "setAttribute" => 16,
-                "setAttributeNS" => 17,
-                "setBoolAttribute" => 18,
-                "className" => 19,
-                "style" => 20,
-                "setStyleProperty" => 21,
-                "addEventListener" => 22,
-                "effect" => 23,
-                "getOwner" => 24,
+                "addEventListener" => 4,
+                "insert" => 5,
+                "setAttribute" => 6,
+                "setBoolAttribute" => 7,
+                "className" => 8,
+                "style" => 9,
+                "setStyleProperty" => 10,
+                "effect" => 11,
+                "classList" => 12,
+                "use" => 13,
+                "spread" => 14,
+                "mergeProps" => 15,
+                "For" => 20,
+                "Show" => 21,
+                "Suspense" => 22,
+                "SuspenseList" => 23,
+                "Switch" => 24,
+                "Match" => 25,
+                "Index" => 26,
+                "ErrorBoundary" => 27,
+                "setAttributeNS" => 28,
+                "getOwner" => 29,
                 _ => 100, // Unknown imports go last
             }
         };
@@ -2045,8 +2245,8 @@ impl<'a> DomExpressions<'a> {
 
     /// Create template variable declarations
     fn create_template_declarations(&self) -> Option<Statement<'a>> {
-        use oxc_ast::ast::*;
         use crate::options::GenerateMode;
+        use oxc_ast::ast::*;
 
         if self.template_map.is_empty() {
             return None;
@@ -2199,7 +2399,10 @@ impl<'a> DomExpressions<'a> {
 
         let mut args = OxcVec::new_in(self.allocator);
         args.push(Argument::from(ref_expr.clone_in(self.allocator)));
-        args.push(Argument::Identifier(Box::new_in(element_ref, self.allocator)));
+        args.push(Argument::Identifier(Box::new_in(
+            element_ref,
+            self.allocator,
+        )));
 
         let call_expr = CallExpression {
             span: SPAN,
@@ -2214,6 +2417,75 @@ impl<'a> DomExpressions<'a> {
             ExpressionStatement {
                 span: SPAN,
                 expression: Expression::CallExpression(Box::new_in(call_expr, self.allocator)),
+            },
+            self.allocator,
+        )))
+    }
+
+    /// Create a spread call: _$spread(element, props, false, true)
+    fn create_spread_call(
+        &self,
+        element_var: &str,
+        spread_expr: &Expression<'a>,
+    ) -> Option<Statement<'a>> {
+        use oxc_allocator::CloneIn;
+        use oxc_ast::ast::*;
+
+        // Create: _$spread(element, props, false, true)
+        let spread_id = IdentifierReference {
+            span: SPAN,
+            name: Atom::from("_$spread"),
+            reference_id: None.into(),
+        };
+
+        let element_ref = IdentifierReference {
+            span: SPAN,
+            name: Atom::from(self.allocator.alloc_str(element_var)),
+            reference_id: None.into(),
+        };
+
+        let mut args = OxcVec::new_in(self.allocator);
+
+        // Arg 1: element reference
+        args.push(Argument::from(Expression::Identifier(Box::new_in(
+            element_ref,
+            self.allocator,
+        ))));
+
+        // Arg 2: spread expression
+        args.push(Argument::from(spread_expr.clone_in(self.allocator)));
+
+        // Arg 3: false (prevProps)
+        args.push(Argument::from(Expression::BooleanLiteral(Box::new_in(
+            BooleanLiteral {
+                span: SPAN,
+                value: false,
+            },
+            self.allocator,
+        ))));
+
+        // Arg 4: true (merge)
+        args.push(Argument::from(Expression::BooleanLiteral(Box::new_in(
+            BooleanLiteral {
+                span: SPAN,
+                value: true,
+            },
+            self.allocator,
+        ))));
+
+        let call = CallExpression {
+            span: SPAN,
+            callee: Expression::Identifier(Box::new_in(spread_id, self.allocator)),
+            arguments: args,
+            optional: false,
+            type_arguments: None,
+            pure: false,
+        };
+
+        Some(Statement::ExpressionStatement(Box::new_in(
+            ExpressionStatement {
+                span: SPAN,
+                expression: Expression::CallExpression(Box::new_in(call, self.allocator)),
             },
             self.allocator,
         )))
@@ -2242,7 +2514,10 @@ impl<'a> DomExpressions<'a> {
         };
 
         let mut args = OxcVec::new_in(self.allocator);
-        args.push(Argument::Identifier(Box::new_in(element_ref, self.allocator)));
+        args.push(Argument::Identifier(Box::new_in(
+            element_ref,
+            self.allocator,
+        )));
         args.push(Argument::from(class_list_expr.clone_in(self.allocator)));
 
         let call_expr = CallExpression {
@@ -2286,7 +2561,10 @@ impl<'a> DomExpressions<'a> {
         };
 
         let mut args = OxcVec::new_in(self.allocator);
-        args.push(Argument::Identifier(Box::new_in(element_ref, self.allocator)));
+        args.push(Argument::Identifier(Box::new_in(
+            element_ref,
+            self.allocator,
+        )));
         args.push(Argument::from(style_expr.clone_in(self.allocator)));
 
         let call_expr = CallExpression {
@@ -2326,7 +2604,10 @@ impl<'a> DomExpressions<'a> {
         };
 
         let mut args = OxcVec::new_in(self.allocator);
-        args.push(Argument::Identifier(Box::new_in(element_ref, self.allocator)));
+        args.push(Argument::Identifier(Box::new_in(
+            element_ref,
+            self.allocator,
+        )));
 
         let call_expr = CallExpression {
             span: SPAN,
@@ -2370,7 +2651,10 @@ impl<'a> DomExpressions<'a> {
         };
 
         let mut args = OxcVec::new_in(self.allocator);
-        args.push(Argument::Identifier(Box::new_in(element_ref, self.allocator)));
+        args.push(Argument::Identifier(Box::new_in(
+            element_ref,
+            self.allocator,
+        )));
         args.push(Argument::StringLiteral(Box::new_in(
             StringLiteral {
                 span: SPAN,
@@ -2535,7 +2819,8 @@ impl<'a> DomExpressions<'a> {
                         match value {
                             JSXAttributeValue::StringLiteral(str_lit) => {
                                 // Decode HTML entities in JSX string literal attributes for components
-                                let decoded = crate::utils::decode_html_entities(str_lit.value.as_str());
+                                let decoded =
+                                    crate::utils::decode_html_entities(str_lit.value.as_str());
                                 Expression::StringLiteral(Box::new_in(
                                     StringLiteral {
                                         span: SPAN,
@@ -2611,21 +2896,27 @@ impl<'a> DomExpressions<'a> {
         if !jsx_elem.children.is_empty() {
             // Check if we need a getter for children
             // Getter is needed when we have mixed text and expression children
-            let significant_children: Vec<_> = jsx_elem.children
+            let significant_children: Vec<_> = jsx_elem
+                .children
                 .iter()
                 .filter(|child| match child {
                     JSXChild::Text(text) => {
                         let text_value = text.value.as_str();
-                        !text_value.trim().is_empty() 
+                        !text_value.trim().is_empty()
                             || (!text_value.contains('\n') && !text_value.is_empty())
                     }
                     _ => true,
                 })
                 .collect();
 
-            let has_text = significant_children.iter().any(|child| matches!(child, JSXChild::Text(_)));
+            let has_text = significant_children
+                .iter()
+                .any(|child| matches!(child, JSXChild::Text(_)));
             let has_expression = significant_children.iter().any(|child| {
-                matches!(child, JSXChild::ExpressionContainer(_) | JSXChild::Element(_) | JSXChild::Fragment(_))
+                matches!(
+                    child,
+                    JSXChild::ExpressionContainer(_) | JSXChild::Element(_) | JSXChild::Fragment(_)
+                )
             });
             let needs_getter = has_text && has_expression && significant_children.len() > 1;
 
@@ -2681,7 +2972,8 @@ impl<'a> DomExpressions<'a> {
                     pife: false,
                 };
 
-                let getter_value = Expression::FunctionExpression(Box::new_in(getter_fn, self.allocator));
+                let getter_value =
+                    Expression::FunctionExpression(Box::new_in(getter_fn, self.allocator));
 
                 properties.push(ObjectPropertyKind::ObjectProperty(Box::new_in(
                     ObjectProperty {
@@ -2730,7 +3022,7 @@ impl<'a> DomExpressions<'a> {
                 JSXChild::Text(text) => {
                     let text_value = text.value.as_str();
                     // Keep if not empty when trimmed OR if it's whitespace without newlines
-                    !text_value.trim().is_empty() 
+                    !text_value.trim().is_empty()
                         || (!text_value.contains('\n') && !text_value.is_empty())
                 }
                 _ => true,
@@ -3060,7 +3352,7 @@ impl<'a> DomExpressions<'a> {
 impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
     fn enter_program(&mut self, _program: &mut Program<'a>, _ctx: &mut TraverseCtx<'a, ()>) {
         use crate::options::GenerateMode;
-        
+
         // Entry point for the transformation
         // Initialize state for collecting templates and imports
         self.templates.clear();

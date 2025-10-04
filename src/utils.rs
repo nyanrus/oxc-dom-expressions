@@ -246,7 +246,7 @@ pub fn is_static_jsx_attribute_value(value: &JSXAttributeValue) -> bool {
 pub fn static_style_object_to_css(expr: &Expression) -> Option<String> {
     if let Expression::ObjectExpression(obj) = expr {
         let mut css_parts = Vec::new();
-        
+
         for prop in &obj.properties {
             if let ObjectPropertyKind::ObjectProperty(p) = prop {
                 // Get property name
@@ -255,7 +255,7 @@ pub fn static_style_object_to_css(expr: &Expression) -> Option<String> {
                     PropertyKey::StringLiteral(lit) => lit.value.as_str(),
                     _ => continue,
                 };
-                
+
                 // Get property value - skip if null or undefined
                 let prop_value = match &p.value {
                     Expression::StringLiteral(lit) => lit.value.as_str(),
@@ -264,13 +264,13 @@ pub fn static_style_object_to_css(expr: &Expression) -> Option<String> {
                         return None; // For now, skip - we'd need allocator to create string
                     }
                     Expression::NullLiteral(_) => continue, // Skip null values
-                    _ => continue, // Skip non-static values
+                    _ => continue,                          // Skip non-static values
                 };
-                
+
                 css_parts.push(format!("{}:{}", prop_name, prop_value));
             }
         }
-        
+
         if css_parts.is_empty() {
             None
         } else {
@@ -286,13 +286,13 @@ pub fn static_style_object_to_css(expr: &Expression) -> Option<String> {
 pub fn decode_html_entities(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
-    
+
     while let Some(ch) = chars.next() {
         if ch == '&' {
             // Try to parse an HTML entity
             let mut entity = String::new();
             let mut found_entity = false;
-            
+
             // Collect characters until ';' or non-alphanumeric
             while let Some(&next_ch) = chars.peek() {
                 if next_ch == ';' {
@@ -305,7 +305,7 @@ pub fn decode_html_entities(text: &str) -> String {
                     break;
                 }
             }
-            
+
             if found_entity {
                 // Try to decode the entity
                 let decoded = match entity.as_str() {
@@ -314,12 +314,15 @@ pub fn decode_html_entities(text: &str) -> String {
                     "amp" => '&',
                     "quot" => '"',
                     "apos" => '\'',
-                    "nbsp" => '\u{A0}', // non-breaking space
+                    "nbsp" => '\u{A0}',     // non-breaking space
                     "hellip" => '\u{2026}', // horizontal ellipsis
                     // Numeric entities
                     _ if entity.starts_with('#') => {
                         if let Some(num_str) = entity.strip_prefix('#') {
-                            if let Some(hex_str) = num_str.strip_prefix('x').or_else(|| num_str.strip_prefix('X')) {
+                            if let Some(hex_str) = num_str
+                                .strip_prefix('x')
+                                .or_else(|| num_str.strip_prefix('X'))
+                            {
                                 // Hexadecimal
                                 if let Ok(code) = u32::from_str_radix(hex_str, 16) {
                                     char::from_u32(code).unwrap_or('&')
@@ -346,7 +349,7 @@ pub fn decode_html_entities(text: &str) -> String {
                             result.push(';');
                             continue;
                         }
-                    },
+                    }
                     _ => {
                         // Unknown entity, keep as-is
                         result.push('&');
@@ -365,7 +368,7 @@ pub fn decode_html_entities(text: &str) -> String {
             result.push(ch);
         }
     }
-    
+
     result
 }
 
@@ -412,7 +415,7 @@ mod tests {
         assert!(should_delegate_event("Click"));
         assert!(should_delegate_event("mousedown"));
         assert!(should_delegate_event("keydown"));
-        
+
         // Events that should NOT be delegated
         assert!(!should_delegate_event("input"));
         assert!(!should_delegate_event("change"));
@@ -449,7 +452,10 @@ mod tests {
 
     #[test]
     fn test_decode_html_entities() {
-        assert_eq!(decode_html_entities("&nbsp;&lt;Hi&gt;&nbsp;"), "\u{A0}<Hi>\u{A0}");
+        assert_eq!(
+            decode_html_entities("&nbsp;&lt;Hi&gt;&nbsp;"),
+            "\u{A0}<Hi>\u{A0}"
+        );
         assert_eq!(decode_html_entities("&amp;&lt;&gt;&quot;&apos;"), "&<>\"'");
         assert_eq!(decode_html_entities("Search&hellip;"), "Search\u{2026}");
         assert_eq!(decode_html_entities("plain text"), "plain text");

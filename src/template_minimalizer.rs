@@ -122,9 +122,9 @@ fn serialize_node(
 /// Check if attribute value can be written without quotes
 fn can_omit_quotes(value: &str) -> bool {
     !value.is_empty()
-        && value
-            .chars()
-            .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '.' | ':' | '/' | '@' | '+' | '#' | '~'))
+        && value.chars().all(|c| {
+            c.is_alphanumeric() || matches!(c, '-' | '_' | '.' | ':' | '/' | '@' | '+' | '#' | '~')
+        })
 }
 
 #[cfg(test)]

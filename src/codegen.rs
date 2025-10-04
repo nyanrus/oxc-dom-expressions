@@ -252,11 +252,7 @@ pub fn generate_template_transformation(
                 );
             }
             SlotType::Spread => {
-                let _ = writeln!(
-                    code,
-                    "  spread({}, {{/* props */}});",
-                    element_ref
-                );
+                let _ = writeln!(code, "  spread({}, {{/* props */}});", element_ref);
             }
         }
     }

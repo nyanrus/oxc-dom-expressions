@@ -138,7 +138,7 @@ fn normalize_string_quotes(code: &str) -> String {
     let mut in_string = false;
     let mut string_quote = '\0';
     let mut prev_char = '\0';
-    
+
     while let Some(ch) = chars.next() {
         if ch == '"' || ch == '\'' {
             if !in_string {
@@ -171,7 +171,7 @@ fn normalize_string_quotes(code: &str) -> String {
         }
         prev_char = ch;
     }
-    
+
     result
 }
 
