@@ -46,7 +46,7 @@ use oxc_span::SPAN;
 use oxc_traverse::{Traverse, TraverseCtx};
 use std::collections::{HashMap, HashSet};
 
-use crate::compat::{get_import_priority, template_var_name, element_var_name};
+use crate::compat::{element_var_name, get_import_priority, template_var_name};
 use crate::optimizer::{TemplateOptimizer, TemplateStats};
 use crate::options::DomExpressionsOptions;
 use crate::template::{SlotType, Template};
@@ -2222,9 +2222,7 @@ impl<'a> DomExpressions<'a> {
         sorted_templates.sort_by(|a, b| {
             // Extract the numeric part from variable names using compat naming module
             use crate::compat::naming::extract_template_counter;
-            let get_num = |name: &str| -> usize {
-                extract_template_counter(name).unwrap_or(0)
-            };
+            let get_num = |name: &str| -> usize { extract_template_counter(name).unwrap_or(0) };
             get_num(a.1).cmp(&get_num(b.1))
         });
 
@@ -3177,9 +3175,7 @@ impl<'a> DomExpressions<'a> {
                 // Check if this is a template or component call - those shouldn't be wrapped
                 use crate::compat::naming::is_template_var;
                 if let Expression::Identifier(ident) = &call_expr.callee {
-                    if is_template_var(&ident.name)
-                        || ident.name.starts_with("_$createComponent")
-                    {
+                    if is_template_var(&ident.name) || ident.name.starts_with("_$createComponent") {
                         return expr;
                     }
                 }

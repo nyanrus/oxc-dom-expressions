@@ -59,11 +59,11 @@ mod tests {
         // Template should have highest priority (lowest number)
         assert_eq!(get_import_priority("template"), 0);
         assert_eq!(get_import_priority("ssr"), 0);
-        
+
         // Common runtime functions should be in the middle
         assert_eq!(get_import_priority("delegateEvents"), 1);
         assert_eq!(get_import_priority("createComponent"), 2);
-        
+
         // Unknown imports should have lowest priority
         assert!(get_import_priority("unknown") > 100);
     }

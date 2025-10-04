@@ -282,6 +282,7 @@ The codebase is organized into focused modules for maintainability:
 - **compat**: Ensures compatibility with babel-plugin-jsx-dom-expressions
   - Output normalization for exact format matching
   - Import ordering to match babel plugin expectations
+  - Variable naming conventions (template/element variable names)
   - Babel-specific transformation behaviors
 
 This separation keeps the core transformation logic clean while maintaining full compatibility with the original babel plugin for fixture tests.
