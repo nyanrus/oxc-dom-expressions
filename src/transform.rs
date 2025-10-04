@@ -297,6 +297,18 @@ impl<'a> DomExpressions<'a> {
         // Collect all paths (including intermediate paths) we need to create
         let mut all_paths = std::collections::HashSet::new();
 
+        // Check if we have any TextContent slots - if so, always create firstChild reference
+        // This matches babel plugin behavior for consistency
+        let has_text_content = template
+            .dynamic_slots
+            .iter()
+            .any(|slot| matches!(slot.slot_type, SlotType::TextContent));
+
+        if has_text_content {
+            // Always create firstChild reference for text content templates
+            all_paths.insert(vec!["firstChild".to_string()]);
+        }
+
         for slot in &template.dynamic_slots {
             // Add intermediate paths for slot path
             if !slot.path.is_empty() {
