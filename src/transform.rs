@@ -636,9 +636,34 @@ impl<'a> DomExpressions<'a> {
                         expr_index += 1;
                     }
                 }
-                SlotType::UseDirective(_) | SlotType::StyleProperty(_) | SlotType::ClassName(_) => {
+                SlotType::UseDirective(_) | SlotType::ClassName(_) => {
                     // These slot types not yet fully implemented
                     if expr_index < expressions.len() {
+                        expr_index += 1;
+                    }
+                }
+                SlotType::StyleProperty(property_name) => {
+                    // Generate setStyleProperty call
+                    self.add_import("setStyleProperty");
+                    self.add_import("effect");
+
+                    if expr_index < expressions.len() {
+                        let element_var = if slot.path.is_empty() {
+                            root_var
+                        } else {
+                            path_to_var
+                                .get(&slot.path)
+                                .map(|s| s.as_str())
+                                .unwrap_or(root_var)
+                        };
+
+                        if let Some(stmt) = self.create_set_style_property_call(
+                            element_var,
+                            property_name,
+                            &expressions[expr_index],
+                        ) {
+                            stmts.push(stmt);
+                        }
                         expr_index += 1;
                     }
                 }
@@ -802,6 +827,145 @@ impl<'a> DomExpressions<'a> {
             },
             self.allocator,
         )))
+    }
+
+    /// Create a setStyleProperty call, optionally wrapped in effect
+    fn create_set_style_property_call(
+        &self,
+        element_var: &str,
+        property_name: &str,
+        value_expr: &Expression<'a>,
+    ) -> Option<Statement<'a>> {
+        use oxc_allocator::CloneIn;
+        use oxc_ast::ast::*;
+
+        // Check if the expression is a call expression (reactive)
+        let is_reactive = matches!(value_expr, Expression::CallExpression(_));
+
+        // Create: _$setStyleProperty(element, "property", value)
+        let set_style_prop_fn = IdentifierReference {
+            span: SPAN,
+            name: Atom::from("_$setStyleProperty"),
+            reference_id: None.into(),
+        };
+
+        let mut set_style_prop_args = OxcVec::new_in(self.allocator);
+
+        // First argument: element reference
+        set_style_prop_args.push(Argument::Identifier(Box::new_in(
+            IdentifierReference {
+                span: SPAN,
+                name: Atom::from(self.allocator.alloc_str(element_var)),
+                reference_id: None.into(),
+            },
+            self.allocator,
+        )));
+
+        // Second argument: property name as string literal
+        set_style_prop_args.push(Argument::StringLiteral(Box::new_in(
+            StringLiteral {
+                span: SPAN,
+                value: Atom::from(self.allocator.alloc_str(property_name)),
+                raw: None,
+                lone_surrogates: false,
+            },
+            self.allocator,
+        )));
+
+        // Third argument: value expression
+        set_style_prop_args.push(Argument::from(value_expr.clone_in(self.allocator)));
+
+        let set_style_prop_call = CallExpression {
+            span: SPAN,
+            callee: Expression::Identifier(Box::new_in(set_style_prop_fn, self.allocator)),
+            arguments: set_style_prop_args,
+            optional: false,
+            type_arguments: None,
+            pure: false,
+        };
+
+        if is_reactive {
+            // Wrap in _$effect for reactive expressions
+            let arrow_body = FunctionBody {
+                span: SPAN,
+                directives: OxcVec::new_in(self.allocator),
+                statements: OxcVec::from_iter_in(
+                    [Statement::ExpressionStatement(Box::new_in(
+                        ExpressionStatement {
+                            span: SPAN,
+                            expression: Expression::CallExpression(Box::new_in(
+                                set_style_prop_call,
+                                self.allocator,
+                            )),
+                        },
+                        self.allocator,
+                    ))],
+                    self.allocator,
+                ),
+            };
+
+            let arrow_fn = ArrowFunctionExpression {
+                span: SPAN,
+                expression: true,
+                r#async: false,
+                params: Box::new_in(
+                    FormalParameters {
+                        span: SPAN,
+                        kind: FormalParameterKind::ArrowFormalParameters,
+                        items: OxcVec::new_in(self.allocator),
+                        rest: None,
+                    },
+                    self.allocator,
+                ),
+                body: Box::new_in(arrow_body, self.allocator),
+                type_parameters: None,
+                return_type: None,
+                scope_id: None.into(),
+                pure: false,
+                pife: false,
+            };
+
+            let effect_fn = IdentifierReference {
+                span: SPAN,
+                name: Atom::from("_$effect"),
+                reference_id: None.into(),
+            };
+
+            let mut effect_args = OxcVec::new_in(self.allocator);
+            effect_args.push(Argument::ArrowFunctionExpression(Box::new_in(
+                arrow_fn,
+                self.allocator,
+            )));
+
+            let effect_call = CallExpression {
+                span: SPAN,
+                callee: Expression::Identifier(Box::new_in(effect_fn, self.allocator)),
+                arguments: effect_args,
+                optional: false,
+                type_arguments: None,
+                pure: false,
+            };
+
+            Some(Statement::ExpressionStatement(Box::new_in(
+                ExpressionStatement {
+                    span: SPAN,
+                    expression: Expression::CallExpression(Box::new_in(effect_call, self.allocator)),
+                },
+                self.allocator,
+            )))
+        } else {
+            // Direct call for non-reactive expressions
+            Some(Statement::ExpressionStatement(Box::new_in(
+                ExpressionStatement {
+                    span: SPAN,
+                    expression: Expression::CallExpression(Box::new_in(
+                        set_style_prop_call,
+                        self.allocator,
+                    )),
+                },
+                self.allocator,
+            )))
+        }
     }
 
     /// Create a setBoolAttribute call, optionally wrapped in effect
