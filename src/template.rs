@@ -105,6 +105,8 @@ pub enum SlotType {
     StyleProperty(String),
     /// Class name binding (class: prefix)
     ClassName(String),
+    /// Spread attribute {...props}
+    Spread,
 }
 
 /// Build a template from a JSX element

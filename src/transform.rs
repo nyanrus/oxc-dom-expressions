@@ -821,6 +821,15 @@ impl<'a> DomExpressions<'a> {
                         expr_index += 1;
                     }
                 }
+                SlotType::Spread => {
+                    // Spread attributes - generate _$spread call
+                    self.add_import("spread");
+                    // TODO: Implement spread attribute handling
+                    // For now, just consume the expression
+                    if expr_index < expressions.len() {
+                        expr_index += 1;
+                    }
+                }
             }
         }
 
@@ -3176,7 +3185,8 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
                 | SlotType::AttrAttribute(_)
                 | SlotType::UseDirective(_)
                 | SlotType::StyleProperty(_)
-                | SlotType::ClassName(_) => {
+                | SlotType::ClassName(_)
+                | SlotType::Spread => {
                     // These slot types don't need special import handling here
                 }
             }

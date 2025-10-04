@@ -251,6 +251,13 @@ pub fn generate_template_transformation(
                     options.effect_wrapper, element_ref, name
                 );
             }
+            SlotType::Spread => {
+                let _ = writeln!(
+                    code,
+                    "  spread({}, {{/* props */}});",
+                    element_ref
+                );
+            }
         }
     }
 
