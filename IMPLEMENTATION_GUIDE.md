@@ -2,6 +2,25 @@
 
 This document provides detailed guidance for implementing the remaining features needed to pass all fixture tests from the original babel-plugin-jsx-dom-expressions.
 
+## Project Structure
+
+The codebase is organized for maintainability:
+
+### Core Modules
+- `src/transform.rs` - Main JSX transformation logic
+- `src/template.rs` - Template generation  
+- `src/codegen.rs` - Code generation utilities
+- `src/optimizer.rs` - Template optimization
+
+### Compatibility Layer
+- `src/compat/` - Babel-plugin-jsx-dom-expressions compatibility
+  - `output_normalizer.rs` - Output formatting
+  - `import_ordering.rs` - Import priority ordering
+
+When implementing new features, consider:
+- Is this core functionality? → Add to transform.rs or relevant module
+- Is this babel-specific? → Add to compat module
+
 ## Current Status
 
 ✅ **Working Features:**
@@ -13,6 +32,7 @@ This document provides detailed guidance for implementing the remaining features
 - Fragments
 - Components
 - Variable naming matches babel output
+- Babel compatibility layer (output normalization, import ordering)
 
 ❌ **Missing Features:**
 - Spread attributes (`{...props}`)
