@@ -477,8 +477,33 @@ impl<'a> DomExpressions<'a> {
                     }
                 }
                 _ => {
-                    // Other slot types not yet implemented
-                    // TODO: Implement event, ref, classList, style bindings
+                    // Other slot types - for now, just consume the expression if there is one
+                    // TODO: Implement full handling for:
+                    // - BoolAttribute, PropAttribute, AttrAttribute
+                    // - UseDirective, StyleProperty, ClassName
+                    // - EventHandler, OnEvent, OnCaptureEvent
+                    // - Ref, ClassList, StyleObject
+                    
+                    // Most slot types consume an expression, but some don't
+                    let consumes_expression = matches!(
+                        &slot.slot_type,
+                        SlotType::EventHandler(_)
+                            | SlotType::OnEvent(_)
+                            | SlotType::OnCaptureEvent(_)
+                            | SlotType::Ref
+                            | SlotType::ClassList
+                            | SlotType::StyleObject
+                            | SlotType::BoolAttribute(_)
+                            | SlotType::PropAttribute(_)
+                            | SlotType::AttrAttribute(_)
+                            | SlotType::UseDirective(_)
+                            | SlotType::StyleProperty(_)
+                            | SlotType::ClassName(_)
+                    );
+                    
+                    if consumes_expression && expr_index < expressions.len() {
+                        expr_index += 1;
+                    }
                 }
             }
         }
@@ -1636,6 +1661,14 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
                 }
                 SlotType::OnEvent(_) | SlotType::OnCaptureEvent(_) => {
                     // These use direct addEventListener, no imports needed
+                }
+                SlotType::BoolAttribute(_)
+                | SlotType::PropAttribute(_)
+                | SlotType::AttrAttribute(_)
+                | SlotType::UseDirective(_)
+                | SlotType::StyleProperty(_)
+                | SlotType::ClassName(_) => {
+                    // These slot types don't need special import handling here
                 }
             }
         }

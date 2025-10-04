@@ -213,6 +213,48 @@ pub fn generate_template_transformation(
                     element_ref, event_name
                 );
             }
+            SlotType::BoolAttribute(name) => {
+                let _ = writeln!(
+                    code,
+                    "  {}(() => setBoolAttribute({}, \"{}\", {{/* value */}}));",
+                    options.effect_wrapper, element_ref, name
+                );
+            }
+            SlotType::PropAttribute(name) => {
+                let _ = writeln!(
+                    code,
+                    "  {}.{} = {{/* value */}};",
+                    element_ref, name
+                );
+            }
+            SlotType::AttrAttribute(name) => {
+                let _ = writeln!(
+                    code,
+                    "  {}(() => setAttribute({}, \"{}\", {{/* value */}}));",
+                    options.effect_wrapper, element_ref, name
+                );
+            }
+            SlotType::UseDirective(name) => {
+                let _ = writeln!(
+                    code,
+                    "  use({}, {{/* value */}}, \"{}\");",
+                    element_ref, name
+                );
+            }
+            SlotType::StyleProperty(name) => {
+                let _ = writeln!(
+                    code,
+                    "  {}(() => setStyleProperty({}, \"{}\", {{/* value */}}));",
+                    options.effect_wrapper, element_ref, name
+                );
+            }
+            SlotType::ClassName(name) => {
+                let _ = writeln!(
+                    code,
+                    "  {}(() => className({}, {{/* value */}}, \"{}\"));",
+                    options.effect_wrapper, element_ref, name
+                );
+            }
         }
     }
 

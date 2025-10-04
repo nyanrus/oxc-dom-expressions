@@ -72,6 +72,61 @@ pub fn is_special_binding(attr_name: &str) -> bool {
         || is_style_binding(attr_name)
         || is_on_prefix_event(attr_name)
         || is_on_capture_event(attr_name)
+        || is_bool_attribute(attr_name)
+        || is_prop_attribute(attr_name)
+        || is_attr_attribute(attr_name)
+        || is_use_directive(attr_name)
+        || is_style_property(attr_name)
+        || is_class_name_binding(attr_name)
+}
+
+/// Check if an attribute uses bool: prefix
+pub fn is_bool_attribute(attr_name: &str) -> bool {
+    attr_name.starts_with("bool:") && attr_name.len() > 5
+}
+
+/// Check if an attribute uses prop: prefix
+pub fn is_prop_attribute(attr_name: &str) -> bool {
+    attr_name.starts_with("prop:") && attr_name.len() > 5
+}
+
+/// Check if an attribute uses attr: prefix
+pub fn is_attr_attribute(attr_name: &str) -> bool {
+    attr_name.starts_with("attr:") && attr_name.len() > 5
+}
+
+/// Check if an attribute uses use: prefix
+pub fn is_use_directive(attr_name: &str) -> bool {
+    attr_name.starts_with("use:") && attr_name.len() > 4
+}
+
+/// Check if an attribute uses style: prefix (for individual style properties)
+pub fn is_style_property(attr_name: &str) -> bool {
+    attr_name.starts_with("style:") && attr_name.len() > 6
+}
+
+/// Check if an attribute uses class: prefix (for individual class bindings)
+pub fn is_class_name_binding(attr_name: &str) -> bool {
+    attr_name.starts_with("class:") && attr_name.len() > 6
+}
+
+/// Get the name after a prefix
+pub fn get_prefixed_name(attr_name: &str) -> Option<&str> {
+    if let Some(rest) = attr_name.strip_prefix("bool:") {
+        Some(rest)
+    } else if let Some(rest) = attr_name.strip_prefix("prop:") {
+        Some(rest)
+    } else if let Some(rest) = attr_name.strip_prefix("attr:") {
+        Some(rest)
+    } else if let Some(rest) = attr_name.strip_prefix("use:") {
+        Some(rest)
+    } else if let Some(rest) = attr_name.strip_prefix("style:") {
+        Some(rest)
+    } else if let Some(rest) = attr_name.strip_prefix("class:") {
+        Some(rest)
+    } else {
+        None
+    }
 }
 
 /// Check if an event should be delegated
