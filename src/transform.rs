@@ -141,8 +141,8 @@ impl<'a> DomExpressions<'a> {
     /// For DOM mode: _tmpl$()
     /// For SSR mode: _$ssr(_tmpl$)
     fn create_template_call(&self, template_var: &'a str) -> Box<'a, CallExpression<'a>> {
-        use oxc_ast::ast::*;
         use crate::options::GenerateMode;
+        use oxc_ast::ast::*;
 
         let is_ssr = self.options.generate == GenerateMode::Ssr;
 
@@ -790,7 +790,7 @@ impl<'a> DomExpressions<'a> {
                 SlotType::ClassName(class_name) => {
                     // Generate className call
                     self.add_import("className");
-                    
+
                     if expr_index < expressions.len() {
                         let element_var = if slot.path.is_empty() {
                             root_var
@@ -850,7 +850,9 @@ impl<'a> DomExpressions<'a> {
                                 .unwrap_or(root_var)
                         };
 
-                        if let Some(stmt) = self.create_ref_call(element_var, &expressions[expr_index]) {
+                        if let Some(stmt) =
+                            self.create_ref_call(element_var, &expressions[expr_index])
+                        {
                             stmts.push(stmt);
                         }
                         expr_index += 1;
@@ -870,7 +872,9 @@ impl<'a> DomExpressions<'a> {
                                 .unwrap_or(root_var)
                         };
 
-                        if let Some(stmt) = self.create_class_list_call(element_var, &expressions[expr_index]) {
+                        if let Some(stmt) =
+                            self.create_class_list_call(element_var, &expressions[expr_index])
+                        {
                             stmts.push(stmt);
                         }
                         expr_index += 1;
@@ -890,7 +894,9 @@ impl<'a> DomExpressions<'a> {
                                 .unwrap_or(root_var)
                         };
 
-                        if let Some(stmt) = self.create_style_object_call(element_var, &expressions[expr_index]) {
+                        if let Some(stmt) =
+                            self.create_style_object_call(element_var, &expressions[expr_index])
+                        {
                             stmts.push(stmt);
                         }
                         expr_index += 1;
@@ -899,7 +905,7 @@ impl<'a> DomExpressions<'a> {
                 SlotType::Spread => {
                     // Spread attributes - generate _$spread call
                     self.add_import("spread");
-                    
+
                     if expr_index < expressions.len() {
                         let element_var = if slot.path.is_empty() {
                             root_var
@@ -910,7 +916,9 @@ impl<'a> DomExpressions<'a> {
                                 .unwrap_or(root_var)
                         };
 
-                        if let Some(stmt) = self.create_spread_call(element_var, &expressions[expr_index]) {
+                        if let Some(stmt) =
+                            self.create_spread_call(element_var, &expressions[expr_index])
+                        {
                             stmts.push(stmt);
                         }
                         expr_index += 1;
@@ -1183,7 +1191,10 @@ impl<'a> DomExpressions<'a> {
             Some(Statement::ExpressionStatement(Box::new_in(
                 ExpressionStatement {
                     span: SPAN,
-                    expression: Expression::CallExpression(Box::new_in(effect_call, self.allocator)),
+                    expression: Expression::CallExpression(Box::new_in(
+                        effect_call,
+                        self.allocator,
+                    )),
                 },
                 self.allocator,
             )))
@@ -1324,7 +1335,10 @@ impl<'a> DomExpressions<'a> {
             Some(Statement::ExpressionStatement(Box::new_in(
                 ExpressionStatement {
                     span: SPAN,
-                    expression: Expression::CallExpression(Box::new_in(effect_call, self.allocator)),
+                    expression: Expression::CallExpression(Box::new_in(
+                        effect_call,
+                        self.allocator,
+                    )),
                 },
                 self.allocator,
             )))
@@ -2231,8 +2245,8 @@ impl<'a> DomExpressions<'a> {
 
     /// Create template variable declarations
     fn create_template_declarations(&self) -> Option<Statement<'a>> {
-        use oxc_ast::ast::*;
         use crate::options::GenerateMode;
+        use oxc_ast::ast::*;
 
         if self.template_map.is_empty() {
             return None;
@@ -2385,7 +2399,10 @@ impl<'a> DomExpressions<'a> {
 
         let mut args = OxcVec::new_in(self.allocator);
         args.push(Argument::from(ref_expr.clone_in(self.allocator)));
-        args.push(Argument::Identifier(Box::new_in(element_ref, self.allocator)));
+        args.push(Argument::Identifier(Box::new_in(
+            element_ref,
+            self.allocator,
+        )));
 
         let call_expr = CallExpression {
             span: SPAN,
@@ -2497,7 +2514,10 @@ impl<'a> DomExpressions<'a> {
         };
 
         let mut args = OxcVec::new_in(self.allocator);
-        args.push(Argument::Identifier(Box::new_in(element_ref, self.allocator)));
+        args.push(Argument::Identifier(Box::new_in(
+            element_ref,
+            self.allocator,
+        )));
         args.push(Argument::from(class_list_expr.clone_in(self.allocator)));
 
         let call_expr = CallExpression {
@@ -2541,7 +2561,10 @@ impl<'a> DomExpressions<'a> {
         };
 
         let mut args = OxcVec::new_in(self.allocator);
-        args.push(Argument::Identifier(Box::new_in(element_ref, self.allocator)));
+        args.push(Argument::Identifier(Box::new_in(
+            element_ref,
+            self.allocator,
+        )));
         args.push(Argument::from(style_expr.clone_in(self.allocator)));
 
         let call_expr = CallExpression {
@@ -2581,7 +2604,10 @@ impl<'a> DomExpressions<'a> {
         };
 
         let mut args = OxcVec::new_in(self.allocator);
-        args.push(Argument::Identifier(Box::new_in(element_ref, self.allocator)));
+        args.push(Argument::Identifier(Box::new_in(
+            element_ref,
+            self.allocator,
+        )));
 
         let call_expr = CallExpression {
             span: SPAN,
@@ -2625,7 +2651,10 @@ impl<'a> DomExpressions<'a> {
         };
 
         let mut args = OxcVec::new_in(self.allocator);
-        args.push(Argument::Identifier(Box::new_in(element_ref, self.allocator)));
+        args.push(Argument::Identifier(Box::new_in(
+            element_ref,
+            self.allocator,
+        )));
         args.push(Argument::StringLiteral(Box::new_in(
             StringLiteral {
                 span: SPAN,
@@ -2790,7 +2819,8 @@ impl<'a> DomExpressions<'a> {
                         match value {
                             JSXAttributeValue::StringLiteral(str_lit) => {
                                 // Decode HTML entities in JSX string literal attributes for components
-                                let decoded = crate::utils::decode_html_entities(str_lit.value.as_str());
+                                let decoded =
+                                    crate::utils::decode_html_entities(str_lit.value.as_str());
                                 Expression::StringLiteral(Box::new_in(
                                     StringLiteral {
                                         span: SPAN,
@@ -2866,21 +2896,27 @@ impl<'a> DomExpressions<'a> {
         if !jsx_elem.children.is_empty() {
             // Check if we need a getter for children
             // Getter is needed when we have mixed text and expression children
-            let significant_children: Vec<_> = jsx_elem.children
+            let significant_children: Vec<_> = jsx_elem
+                .children
                 .iter()
                 .filter(|child| match child {
                     JSXChild::Text(text) => {
                         let text_value = text.value.as_str();
-                        !text_value.trim().is_empty() 
+                        !text_value.trim().is_empty()
                             || (!text_value.contains('\n') && !text_value.is_empty())
                     }
                     _ => true,
                 })
                 .collect();
 
-            let has_text = significant_children.iter().any(|child| matches!(child, JSXChild::Text(_)));
+            let has_text = significant_children
+                .iter()
+                .any(|child| matches!(child, JSXChild::Text(_)));
             let has_expression = significant_children.iter().any(|child| {
-                matches!(child, JSXChild::ExpressionContainer(_) | JSXChild::Element(_) | JSXChild::Fragment(_))
+                matches!(
+                    child,
+                    JSXChild::ExpressionContainer(_) | JSXChild::Element(_) | JSXChild::Fragment(_)
+                )
             });
             let needs_getter = has_text && has_expression && significant_children.len() > 1;
 
@@ -2936,7 +2972,8 @@ impl<'a> DomExpressions<'a> {
                     pife: false,
                 };
 
-                let getter_value = Expression::FunctionExpression(Box::new_in(getter_fn, self.allocator));
+                let getter_value =
+                    Expression::FunctionExpression(Box::new_in(getter_fn, self.allocator));
 
                 properties.push(ObjectPropertyKind::ObjectProperty(Box::new_in(
                     ObjectProperty {
@@ -2985,7 +3022,7 @@ impl<'a> DomExpressions<'a> {
                 JSXChild::Text(text) => {
                     let text_value = text.value.as_str();
                     // Keep if not empty when trimmed OR if it's whitespace without newlines
-                    !text_value.trim().is_empty() 
+                    !text_value.trim().is_empty()
                         || (!text_value.contains('\n') && !text_value.is_empty())
                 }
                 _ => true,
@@ -3315,7 +3352,7 @@ impl<'a> DomExpressions<'a> {
 impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
     fn enter_program(&mut self, _program: &mut Program<'a>, _ctx: &mut TraverseCtx<'a, ()>) {
         use crate::options::GenerateMode;
-        
+
         // Entry point for the transformation
         // Initialize state for collecting templates and imports
         self.templates.clear();

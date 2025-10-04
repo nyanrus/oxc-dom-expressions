@@ -120,7 +120,7 @@ pub fn build_template_with_options(
     options: Option<&crate::options::DomExpressionsOptions>,
 ) -> Template {
     use crate::options::GenerateMode;
-    
+
     let mut template = Template {
         html: String::new(),
         dynamic_slots: Vec::new(),
@@ -169,160 +169,166 @@ fn build_element_html(
                 if let Some(name) = get_attribute_name(&attr.name) {
                     // Check for special bindings
                     if is_ref_binding(&name) {
-                    // Ref binding - track for later code generation
-                    slots.push(DynamicSlot {
-                        path: path.clone(),
-                        slot_type: SlotType::Ref,
-                        marker_path: None,
-                    });
-                } else if is_class_list_binding(&name) {
-                    // ClassList binding
-                    slots.push(DynamicSlot {
-                        path: path.clone(),
-                        slot_type: SlotType::ClassList,
-                        marker_path: None,
-                    });
-                } else if is_style_binding(&name) && attr.value.is_some() {
-                    // Style object binding
-                    if !matches!(attr.value, Some(JSXAttributeValue::StringLiteral(_))) {
-                        // Check if the style object is fully static
-                        let is_fully_static = attr.value.as_ref()
-                            .map(|v| crate::utils::is_static_jsx_attribute_value(v))
-                            .unwrap_or(false);
-                        
-                        if is_fully_static {
-                            // Convert static style object to CSS string and add to HTML
-                            if let Some(JSXAttributeValue::ExpressionContainer(container)) = &attr.value {
-                                if let Some(expr) = container.expression.as_expression() {
-                                    if let Some(css) = crate::utils::static_style_object_to_css(expr) {
-                                        let _ = write!(html, " style={}", css);
+                        // Ref binding - track for later code generation
+                        slots.push(DynamicSlot {
+                            path: path.clone(),
+                            slot_type: SlotType::Ref,
+                            marker_path: None,
+                        });
+                    } else if is_class_list_binding(&name) {
+                        // ClassList binding
+                        slots.push(DynamicSlot {
+                            path: path.clone(),
+                            slot_type: SlotType::ClassList,
+                            marker_path: None,
+                        });
+                    } else if is_style_binding(&name) && attr.value.is_some() {
+                        // Style object binding
+                        if !matches!(attr.value, Some(JSXAttributeValue::StringLiteral(_))) {
+                            // Check if the style object is fully static
+                            let is_fully_static = attr
+                                .value
+                                .as_ref()
+                                .map(|v| crate::utils::is_static_jsx_attribute_value(v))
+                                .unwrap_or(false);
+
+                            if is_fully_static {
+                                // Convert static style object to CSS string and add to HTML
+                                if let Some(JSXAttributeValue::ExpressionContainer(container)) =
+                                    &attr.value
+                                {
+                                    if let Some(expr) = container.expression.as_expression() {
+                                        if let Some(css) =
+                                            crate::utils::static_style_object_to_css(expr)
+                                        {
+                                            let _ = write!(html, " style={}", css);
+                                        }
                                     }
                                 }
+                            } else {
+                                // Only create a dynamic slot if there are dynamic values
+                                slots.push(DynamicSlot {
+                                    path: path.clone(),
+                                    slot_type: SlotType::StyleObject,
+                                    marker_path: None,
+                                });
                             }
-                        } else {
-                            // Only create a dynamic slot if there are dynamic values
+                        } else if let Some(value) = &attr.value {
+                            // Static style string
+                            if let Some(static_value) = get_static_attribute_value(value) {
+                                let _ = write!(html, " style=\"{}\"", static_value);
+                            }
+                        }
+                    } else if is_on_prefix_event(&name) {
+                        // on: prefix event
+                        if let Some(event_name) = get_prefix_event_name(&name) {
                             slots.push(DynamicSlot {
                                 path: path.clone(),
-                                slot_type: SlotType::StyleObject,
+                                slot_type: SlotType::OnEvent(event_name.to_string()),
+                                marker_path: None,
+                            });
+                        }
+                    } else if is_on_capture_event(&name) {
+                        // oncapture: prefix event
+                        if let Some(event_name) = get_prefix_event_name(&name) {
+                            slots.push(DynamicSlot {
+                                path: path.clone(),
+                                slot_type: SlotType::OnCaptureEvent(event_name.to_string()),
+                                marker_path: None,
+                            });
+                        }
+                    } else if is_bool_attribute(&name) {
+                        // bool: prefix attribute
+                        if let Some(attr_name) = get_prefixed_name(&name) {
+                            slots.push(DynamicSlot {
+                                path: path.clone(),
+                                slot_type: SlotType::BoolAttribute(attr_name.to_string()),
+                                marker_path: None,
+                            });
+                        }
+                    } else if is_prop_attribute(&name) {
+                        // prop: prefix attribute
+                        if let Some(attr_name) = get_prefixed_name(&name) {
+                            slots.push(DynamicSlot {
+                                path: path.clone(),
+                                slot_type: SlotType::PropAttribute(attr_name.to_string()),
+                                marker_path: None,
+                            });
+                        }
+                    } else if is_attr_attribute(&name) {
+                        // attr: prefix attribute
+                        if let Some(attr_name) = get_prefixed_name(&name) {
+                            slots.push(DynamicSlot {
+                                path: path.clone(),
+                                slot_type: SlotType::AttrAttribute(attr_name.to_string()),
+                                marker_path: None,
+                            });
+                        }
+                    } else if is_use_directive(&name) {
+                        // use: prefix directive
+                        if let Some(directive_name) = get_prefixed_name(&name) {
+                            slots.push(DynamicSlot {
+                                path: path.clone(),
+                                slot_type: SlotType::UseDirective(directive_name.to_string()),
+                                marker_path: None,
+                            });
+                        }
+                    } else if is_style_property(&name) {
+                        // style: prefix property
+                        if let Some(prop_name) = get_prefixed_name(&name) {
+                            slots.push(DynamicSlot {
+                                path: path.clone(),
+                                slot_type: SlotType::StyleProperty(prop_name.to_string()),
+                                marker_path: None,
+                            });
+                        }
+                    } else if is_class_name_binding(&name) {
+                        // class: prefix binding
+                        if let Some(class_name) = get_prefixed_name(&name) {
+                            slots.push(DynamicSlot {
+                                path: path.clone(),
+                                slot_type: SlotType::ClassName(class_name.to_string()),
+                                marker_path: None,
+                            });
+                        }
+                    } else if is_event_handler(&name) {
+                        // Regular event handler
+                        if let Some(event_name) = get_event_name(&name) {
+                            slots.push(DynamicSlot {
+                                path: path.clone(),
+                                slot_type: SlotType::EventHandler(event_name.to_string()),
                                 marker_path: None,
                             });
                         }
                     } else if let Some(value) = &attr.value {
-                        // Static style string
+                        // Regular attribute
                         if let Some(static_value) = get_static_attribute_value(value) {
-                            let _ = write!(html, " style=\"{}\"", static_value);
+                            // Static attribute - add to template with quotes
+                            let _ = write!(html, " {}=\"{}\"", name, static_value);
+                        } else {
+                            // Dynamic attribute - track for later
+                            slots.push(DynamicSlot {
+                                path: path.clone(),
+                                slot_type: SlotType::Attribute(name.clone()),
+                                marker_path: None,
+                            });
                         }
-                    }
-                } else if is_on_prefix_event(&name) {
-                    // on: prefix event
-                    if let Some(event_name) = get_prefix_event_name(&name) {
-                        slots.push(DynamicSlot {
-                            path: path.clone(),
-                            slot_type: SlotType::OnEvent(event_name.to_string()),
-                            marker_path: None,
-                        });
-                    }
-                } else if is_on_capture_event(&name) {
-                    // oncapture: prefix event
-                    if let Some(event_name) = get_prefix_event_name(&name) {
-                        slots.push(DynamicSlot {
-                            path: path.clone(),
-                            slot_type: SlotType::OnCaptureEvent(event_name.to_string()),
-                            marker_path: None,
-                        });
-                    }
-                } else if is_bool_attribute(&name) {
-                    // bool: prefix attribute
-                    if let Some(attr_name) = get_prefixed_name(&name) {
-                        slots.push(DynamicSlot {
-                            path: path.clone(),
-                            slot_type: SlotType::BoolAttribute(attr_name.to_string()),
-                            marker_path: None,
-                        });
-                    }
-                } else if is_prop_attribute(&name) {
-                    // prop: prefix attribute
-                    if let Some(attr_name) = get_prefixed_name(&name) {
-                        slots.push(DynamicSlot {
-                            path: path.clone(),
-                            slot_type: SlotType::PropAttribute(attr_name.to_string()),
-                            marker_path: None,
-                        });
-                    }
-                } else if is_attr_attribute(&name) {
-                    // attr: prefix attribute
-                    if let Some(attr_name) = get_prefixed_name(&name) {
-                        slots.push(DynamicSlot {
-                            path: path.clone(),
-                            slot_type: SlotType::AttrAttribute(attr_name.to_string()),
-                            marker_path: None,
-                        });
-                    }
-                } else if is_use_directive(&name) {
-                    // use: prefix directive
-                    if let Some(directive_name) = get_prefixed_name(&name) {
-                        slots.push(DynamicSlot {
-                            path: path.clone(),
-                            slot_type: SlotType::UseDirective(directive_name.to_string()),
-                            marker_path: None,
-                        });
-                    }
-                } else if is_style_property(&name) {
-                    // style: prefix property
-                    if let Some(prop_name) = get_prefixed_name(&name) {
-                        slots.push(DynamicSlot {
-                            path: path.clone(),
-                            slot_type: SlotType::StyleProperty(prop_name.to_string()),
-                            marker_path: None,
-                        });
-                    }
-                } else if is_class_name_binding(&name) {
-                    // class: prefix binding
-                    if let Some(class_name) = get_prefixed_name(&name) {
-                        slots.push(DynamicSlot {
-                            path: path.clone(),
-                            slot_type: SlotType::ClassName(class_name.to_string()),
-                            marker_path: None,
-                        });
-                    }
-                } else if is_event_handler(&name) {
-                    // Regular event handler
-                    if let Some(event_name) = get_event_name(&name) {
-                        slots.push(DynamicSlot {
-                            path: path.clone(),
-                            slot_type: SlotType::EventHandler(event_name.to_string()),
-                            marker_path: None,
-                        });
-                    }
-                } else if let Some(value) = &attr.value {
-                    // Regular attribute
-                    if let Some(static_value) = get_static_attribute_value(value) {
-                        // Static attribute - add to template with quotes
-                        let _ = write!(html, " {}=\"{}\"", name, static_value);
                     } else {
-                        // Dynamic attribute - track for later
-                        slots.push(DynamicSlot {
-                            path: path.clone(),
-                            slot_type: SlotType::Attribute(name.clone()),
-                            marker_path: None,
-                        });
+                        // Boolean attribute
+                        let _ = write!(html, " {}", name);
                     }
-                } else {
-                    // Boolean attribute
-                    let _ = write!(html, " {}", name);
                 }
             }
-        }
-        JSXAttributeItem::SpreadAttribute(_spread) => {
-            // Spread attribute - track for later code generation
-            // Spread attributes don't contribute to the template HTML
-            // They will be processed during code generation
-            slots.push(DynamicSlot {
-                path: path.clone(),
-                slot_type: SlotType::Spread,
-                marker_path: None,
-            });
-        }
+            JSXAttributeItem::SpreadAttribute(_spread) => {
+                // Spread attribute - track for later code generation
+                // Spread attributes don't contribute to the template HTML
+                // They will be processed during code generation
+                slots.push(DynamicSlot {
+                    path: path.clone(),
+                    slot_type: SlotType::Spread,
+                    marker_path: None,
+                });
+            }
         }
     }
 
