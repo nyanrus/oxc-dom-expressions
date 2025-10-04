@@ -319,7 +319,7 @@ fn build_element_html(
         for (i, child) in element.children.iter().enumerate() {
             let is_last_child = i == element.children.len() - 1;
             let is_expression = matches!(child, JSXChild::ExpressionContainer(_));
-            
+
             // Check if previous child was an expression (to detect adjacent expressions)
             let prev_is_expression = if i > 0 {
                 matches!(element.children[i - 1], JSXChild::ExpressionContainer(_))
@@ -359,7 +359,7 @@ fn build_element_html(
             if will_create_node[i] {
                 num_nodes_added += 1;
             }
-            
+
             // Clear last_marker_path if this wasn't an expression
             if !is_expression {
                 last_marker_path = None;
@@ -440,10 +440,10 @@ fn build_child_html_with_context(
             // 2. If this is the first NODE (num_nodes_so_far == 0), use next node as insertion point
             // 3. If expression is LAST child, insert at end with null (no marker)
             // 4. Otherwise, add a marker after the expression
-            
+
             // Check if this is the first real node (not counting skipped formatting whitespace)
             let is_first_node = num_nodes_so_far == 0;
-            
+
             let marker_path = if prev_is_expression && last_marker_path.is_some() {
                 // Adjacent to previous expression - reuse marker
                 last_marker_path.clone()
