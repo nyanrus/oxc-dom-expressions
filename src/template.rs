@@ -164,10 +164,11 @@ fn build_element_html(
 
     // Process attributes
     for attr in &element.opening_element.attributes {
-        if let JSXAttributeItem::Attribute(attr) = attr {
-            if let Some(name) = get_attribute_name(&attr.name) {
-                // Check for special bindings
-                if is_ref_binding(&name) {
+        match attr {
+            JSXAttributeItem::Attribute(attr) => {
+                if let Some(name) = get_attribute_name(&attr.name) {
+                    // Check for special bindings
+                    if is_ref_binding(&name) {
                     // Ref binding - track for later code generation
                     slots.push(DynamicSlot {
                         path: path.clone(),
@@ -311,6 +312,17 @@ fn build_element_html(
                     let _ = write!(html, " {}", name);
                 }
             }
+        }
+        JSXAttributeItem::SpreadAttribute(_spread) => {
+            // Spread attribute - track for later code generation
+            // Spread attributes don't contribute to the template HTML
+            // They will be processed during code generation
+            slots.push(DynamicSlot {
+                path: path.clone(),
+                slot_type: SlotType::Spread,
+                marker_path: None,
+            });
+        }
         }
     }
 
