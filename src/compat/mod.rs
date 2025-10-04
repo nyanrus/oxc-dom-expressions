@@ -29,6 +29,12 @@
 //!   - Runtime function names: `_$insert`, `_$template`, etc.
 //!   - Helper functions for checking and extracting variable names
 //!
+//! - `constants`: Babel-specific constants for documentation and clarity
+//!   - Pure comment formats
+//!   - Variable prefixes
+//!   - Default module names
+//!   - Default wrapper function names
+//!
 //! ## Usage
 //!
 //! ```rust
@@ -50,6 +56,7 @@
 //! imports.sort_by_key(|name| get_import_priority(name));
 //! ```
 
+pub mod constants;
 pub mod import_ordering;
 pub mod naming;
 pub mod output_normalizer;

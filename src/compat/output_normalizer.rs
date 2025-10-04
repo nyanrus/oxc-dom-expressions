@@ -4,6 +4,8 @@
 //! to match the exact format produced by babel-plugin-jsx-dom-expressions.
 //! This is necessary for fixture test compatibility.
 
+use super::constants::{BABEL_PURE_COMMENT, OXC_PURE_COMMENT, TEMPLATE_VAR_PREFIX};
+
 /// Normalizer for babel plugin output compatibility
 pub struct BabelOutputNormalizer;
 
@@ -26,14 +28,16 @@ impl BabelOutputNormalizer {
         let mut result = code.to_string();
 
         // Replace /* @__PURE__ */ with /*#__PURE__*/
-        result = result.replace("/* @__PURE__ */", "/*#__PURE__*/");
+        result = result.replace(OXC_PURE_COMMENT, BABEL_PURE_COMMENT);
 
         // Replace tabs with double spaces to match babel output
         result = result.replace('\t', "  ");
 
         // Format multi-line variable declarations
         // Replace all instances of ", _tmpl$" with ",\n  _tmpl$" in the entire code
-        result = result.replace(", _tmpl$", ",\n  _tmpl$");
+        let template_separator = format!(", {}", TEMPLATE_VAR_PREFIX);
+        let template_replacement = format!(",\n  {}", TEMPLATE_VAR_PREFIX);
+        result = result.replace(&template_separator, &template_replacement);
 
         result
     }

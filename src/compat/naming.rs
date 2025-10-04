@@ -10,6 +10,8 @@
 //! - `_el$` / `_el$2` - Element variable names
 //! - `_$functionName` - Runtime function prefixes
 
+use super::constants::{ELEMENT_VAR_PREFIX, RUNTIME_FN_PREFIX, TEMPLATE_VAR_PREFIX};
+
 /// Generate a template variable name following babel conventions
 ///
 /// # Arguments
@@ -31,9 +33,9 @@
 /// ```
 pub fn template_var_name(counter: usize) -> String {
     if counter == 1 {
-        "_tmpl$".to_string()
+        TEMPLATE_VAR_PREFIX.to_string()
     } else {
-        format!("_tmpl${}", counter)
+        format!("{}{}", TEMPLATE_VAR_PREFIX, counter)
     }
 }
 
@@ -57,7 +59,7 @@ pub fn template_var_name(counter: usize) -> String {
 /// assert_eq!(element_var_name(10), "_el$10");
 /// ```
 pub fn element_var_name(counter: usize) -> String {
-    format!("_el${}", counter)
+    format!("{}{}", ELEMENT_VAR_PREFIX, counter)
 }
 
 /// Get the runtime function name with babel prefix
@@ -80,7 +82,7 @@ pub fn element_var_name(counter: usize) -> String {
 /// assert_eq!(runtime_function_name("delegateEvents"), "_$delegateEvents");
 /// ```
 pub fn runtime_function_name(name: &str) -> String {
-    format!("_${}", name)
+    format!("{}{}", RUNTIME_FN_PREFIX, name)
 }
 
 /// Check if a variable name is a template variable
@@ -93,7 +95,7 @@ pub fn runtime_function_name(name: &str) -> String {
 ///
 /// `true` if the name matches the template variable pattern
 pub fn is_template_var(name: &str) -> bool {
-    name.starts_with("_tmpl$")
+    name.starts_with(TEMPLATE_VAR_PREFIX)
 }
 
 /// Check if a variable name is an element variable
@@ -106,7 +108,7 @@ pub fn is_template_var(name: &str) -> bool {
 ///
 /// `true` if the name matches the element variable pattern
 pub fn is_element_var(name: &str) -> bool {
-    name.starts_with("_el$")
+    name.starts_with(ELEMENT_VAR_PREFIX)
 }
 
 /// Extract the counter from a template variable name
@@ -129,9 +131,9 @@ pub fn is_element_var(name: &str) -> bool {
 /// assert_eq!(extract_template_counter("other"), None);
 /// ```
 pub fn extract_template_counter(name: &str) -> Option<usize> {
-    if name == "_tmpl$" {
+    if name == TEMPLATE_VAR_PREFIX {
         Some(1)
-    } else if let Some(num_str) = name.strip_prefix("_tmpl$") {
+    } else if let Some(num_str) = name.strip_prefix(TEMPLATE_VAR_PREFIX) {
         num_str.parse::<usize>().ok()
     } else {
         None
