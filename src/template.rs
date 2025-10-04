@@ -524,3 +524,27 @@ mod tests {
         assert_eq!(template.dynamic_slots.len(), 0);
     }
 }
+#[cfg(test)]
+mod template_debug {
+    use super::*;
+    
+    #[test]
+    fn debug_template_structure() {
+        let code = r#"<span>Hello {name}</span>"#;
+        let allocator = oxc_allocator::Allocator::default();
+        let ret = oxc_parser::Parser::new(&allocator, code, oxc_span::SourceType::jsx()).parse();
+        
+        if let Some(expr) = ret.program.body.first() {
+            if let oxc_ast::ast::Statement::ExpressionStatement(stmt) = expr {
+                if let oxc_ast::ast::Expression::JSXElement(elem) = &stmt.expression {
+                    let template = crate::template::build_template(elem);
+                    println!("HTML: {:?}", template.html);
+                    for (i, slot) in template.dynamic_slots.iter().enumerate() {
+                        println!("Slot {}: path={:?}, marker_path={:?}, type={:?}", 
+                            i, slot.path, slot.marker_path, slot.slot_type);
+                    }
+                }
+            }
+        }
+    }
+}
