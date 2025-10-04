@@ -1687,6 +1687,7 @@ impl<'a> DomExpressions<'a> {
     }
 
     /// Create element.$$eventNameData = data;
+    #[allow(dead_code)]
     fn create_delegated_event_data(
         &self,
         element_var: &str,
@@ -1814,6 +1815,7 @@ impl<'a> DomExpressions<'a> {
     }
 
     /// Create wrapped event handler: element.addEventListener(event, e => handler(data, e))
+    #[allow(dead_code)]
     fn create_wrapped_event_handler(
         &self,
         element_var: &str,
