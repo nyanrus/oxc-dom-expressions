@@ -81,7 +81,7 @@ impl<'a> DomExpressions<'a> {
             templates: Vec::new(),
             template_map: HashMap::new(),
             template_counter: 0,
-            element_counter: 0,
+            element_counter: 1, // Start at 1 so first child is _el$2 (root is _el$ without number)
             required_imports: Vec::new(),
             delegated_events: HashSet::new(),
             optimizer: TemplateOptimizer::new(),
@@ -287,7 +287,8 @@ impl<'a> DomExpressions<'a> {
     ) {
         use oxc_ast::ast::*;
 
-        let root_var = self.generate_element_var();
+        // Root element is always "_el$" without a number
+        let root_var = String::from("_el$");
         let mut path_to_var = std::collections::HashMap::new();
         let mut declarators = OxcVec::new_in(self.allocator);
 
@@ -1578,11 +1579,12 @@ impl<'a> DomExpressions<'a> {
 
         let mut args = OxcVec::new_in(self.allocator);
 
-        // First argument: event name as string
+        // First argument: event name as lowercase string
+        let lowercase_event = event_name.to_lowercase();
         args.push(Argument::StringLiteral(Box::new_in(
             StringLiteral {
                 span: SPAN,
-                value: Atom::from(self.allocator.alloc_str(event_name)),
+                value: Atom::from(self.allocator.alloc_str(&lowercase_event)),
                 raw: None,
                 lone_surrogates: false,
             },

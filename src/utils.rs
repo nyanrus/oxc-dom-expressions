@@ -134,29 +134,35 @@ pub fn get_prefixed_name(attr_name: &str) -> Option<&str> {
 /// Check if an event should be delegated
 #[allow(dead_code)] // Used by full implementation
 pub fn should_delegate_event(event_name: &str) -> bool {
-    // List of events that can be delegated (bubble or can be composed)
+    // List of events that can be safely delegated
+    // Based on babel-plugin-jsx-dom-expressions behavior
+    // Events like change, input, blur, focus are NOT delegated as they have issues with delegation
     matches!(
         event_name.to_lowercase().as_str(),
         "click"
             | "dblclick"
-            | "input"
-            | "change"
-            | "submit"
-            | "reset"
             | "mousedown"
             | "mouseup"
             | "mouseover"
             | "mouseout"
             | "mousemove"
+            | "mouseenter"
+            | "mouseleave"
             | "keydown"
             | "keyup"
             | "keypress"
-            | "focus"
-            | "blur"
             | "touchstart"
             | "touchend"
             | "touchmove"
             | "touchcancel"
+            | "pointerdown"
+            | "pointerup"
+            | "pointermove"
+            | "pointerover"
+            | "pointerout"
+            | "pointerenter"
+            | "pointerleave"
+            | "pointercancel"
     )
 }
 
@@ -401,9 +407,17 @@ mod tests {
 
     #[test]
     fn test_should_delegate_event() {
+        // Events that should be delegated
         assert!(should_delegate_event("click"));
         assert!(should_delegate_event("Click"));
-        assert!(should_delegate_event("input"));
+        assert!(should_delegate_event("mousedown"));
+        assert!(should_delegate_event("keydown"));
+        
+        // Events that should NOT be delegated
+        assert!(!should_delegate_event("input"));
+        assert!(!should_delegate_event("change"));
+        assert!(!should_delegate_event("blur"));
+        assert!(!should_delegate_event("focus"));
         assert!(!should_delegate_event("customEvent"));
     }
 
