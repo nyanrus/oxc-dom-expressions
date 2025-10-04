@@ -46,6 +46,7 @@ use oxc_span::SPAN;
 use oxc_traverse::{Traverse, TraverseCtx};
 use std::collections::{HashMap, HashSet};
 
+use crate::compat::get_import_priority;
 use crate::optimizer::{TemplateOptimizer, TemplateStats};
 use crate::options::DomExpressionsOptions;
 use crate::template::{SlotType, Template};
@@ -2147,44 +2148,9 @@ impl<'a> DomExpressions<'a> {
 
         let mut statements = Vec::new();
 
-        // Define import priority order to match babel plugin output
-        // This ordering is based on the fixture test expectations
-        let get_priority = |name: &str| -> usize {
-            match name {
-                "template" => 0,
-                "ssr" => 0, // SSR import has same priority as template
-                "delegateEvents" => 1,
-                "createComponent" => 2,
-                "memo" => 3,
-                "addEventListener" => 4,
-                "insert" => 5,
-                "setAttribute" => 6,
-                "setBoolAttribute" => 7,
-                "className" => 8,
-                "style" => 9,
-                "setStyleProperty" => 10,
-                "effect" => 11,
-                "classList" => 12,
-                "use" => 13,
-                "spread" => 14,
-                "mergeProps" => 15,
-                "For" => 20,
-                "Show" => 21,
-                "Suspense" => 22,
-                "SuspenseList" => 23,
-                "Switch" => 24,
-                "Match" => 25,
-                "Index" => 26,
-                "ErrorBoundary" => 27,
-                "setAttributeNS" => 28,
-                "getOwner" => 29,
-                _ => 100, // Unknown imports go last
-            }
-        };
-
-        // Sort imports by priority
+        // Sort imports by priority using the compat module
         let mut sorted_imports: Vec<_> = self.required_imports.iter().collect();
-        sorted_imports.sort_by_key(|name| get_priority(name));
+        sorted_imports.sort_by_key(|name| get_import_priority(name));
 
         for import_name in sorted_imports {
             // Create local binding name (e.g., _$template for template)

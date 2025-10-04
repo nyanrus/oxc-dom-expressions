@@ -14,7 +14,10 @@
 //! ## Modules
 //!
 //! - `output_normalizer`: Normalizes generated code to match babel plugin format
+//! - `import_ordering`: Defines import priority order for babel compatibility
 
+pub mod import_ordering;
 pub mod output_normalizer;
 
+pub use import_ordering::get_import_priority;
 pub use output_normalizer::BabelOutputNormalizer;
