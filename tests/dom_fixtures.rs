@@ -64,7 +64,7 @@ fn normalize_output(code: &str) -> String {
 
     // Replace /* @__PURE__ */ with /*#__PURE__*/
     result = result.replace("/* @__PURE__ */", "/*#__PURE__*/");
-    
+
     // Replace tabs with double spaces to match babel output
     result = result.replace('\t', "  ");
 
@@ -143,7 +143,7 @@ fn normalize_for_comparison(code: &str) -> String {
     let mut normalized = String::with_capacity(result.len());
     let mut chars = result.chars().peekable();
     let mut in_number = false;
-    
+
     while let Some(ch) = chars.next() {
         if ch.is_ascii_digit() {
             if !in_number {
@@ -161,7 +161,7 @@ fn normalize_for_comparison(code: &str) -> String {
 
     // Remove all newlines and carriage returns
     result = result.replace('\n', "").replace('\r', "");
-    
+
     // Remove all tabs
     result = result.replace('\t', "");
 

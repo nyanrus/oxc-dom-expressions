@@ -8,10 +8,10 @@ use oxc_traverse::traverse_mut;
 
 fn main() {
     let source = r#"const el = <div class="hello" id={myId}>Content</div>;"#;
-    
+
     let allocator = Allocator::default();
     let ret = Parser::new(&allocator, source, SourceType::jsx()).parse();
-    
+
     if !ret.errors.is_empty() {
         eprintln!("Parse errors:");
         for err in &ret.errors {
@@ -19,18 +19,18 @@ fn main() {
         }
         return;
     }
-    
+
     let mut program = ret.program;
     let semantic = SemanticBuilder::new().build(&program).semantic;
     let scoping = semantic.into_scoping();
-    
+
     let options = DomExpressionsOptions::new("r-dom")
         .with_delegate_events(true)
         .with_generate(oxc_dom_expressions::GenerateMode::Dom);
-    
+
     let mut transformer = DomExpressions::new(&allocator, options);
     traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
-    
+
     let generated = Codegen::new().build(&program).code;
     println!("{}", generated);
 }
