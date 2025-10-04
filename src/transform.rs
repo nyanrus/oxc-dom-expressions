@@ -405,11 +405,7 @@ impl<'a> DomExpressions<'a> {
     /// Generate unique element variable name
     fn generate_element_var(&mut self) -> String {
         self.element_counter += 1;
-        if self.element_counter == 1 {
-            "_el$".to_string()
-        } else {
-            format!("_el${}", self.element_counter)
-        }
+        format!("_el${}", self.element_counter)
     }
 
     /// Create runtime calls for dynamic content from extracted expressions
