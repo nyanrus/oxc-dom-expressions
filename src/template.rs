@@ -384,8 +384,8 @@ fn build_child_html_with_context(
     prev_is_expression: bool,
     num_nodes_so_far: usize,
     last_marker_path: &mut Option<Vec<String>>,
-    all_children: &[JSXChild],
-    i: usize,
+    _all_children: &[JSXChild],
+    _i: usize,
 ) {
     match child {
         JSXChild::Text(text) => {
