@@ -1263,15 +1263,21 @@ impl<'a> DomExpressions<'a> {
         use oxc_ast::ast::*;
 
         match child {
-            JSXChild::Text(text) => Expression::StringLiteral(Box::new_in(
-                StringLiteral {
-                    span: SPAN,
-                    value: text.value,
-                    raw: None,
-                    lone_surrogates: false,
-                },
-                self.allocator,
-            )),
+            JSXChild::Text(text) => {
+                // Trim the text value to match babel behavior
+                let text_value = text.value.as_str();
+                let trimmed = text_value.trim();
+                
+                Expression::StringLiteral(Box::new_in(
+                    StringLiteral {
+                        span: SPAN,
+                        value: Atom::from(self.allocator.alloc_str(trimmed)),
+                        raw: None,
+                        lone_surrogates: false,
+                    },
+                    self.allocator,
+                ))
+            },
             JSXChild::ExpressionContainer(expr_container) => match &expr_container.expression {
                 jsx_expr if jsx_expr.is_expression() => {
                     self.clone_expression(jsx_expr.as_expression().unwrap())
@@ -1339,25 +1345,33 @@ impl<'a> DomExpressions<'a> {
     fn transform_fragment(&mut self, jsx_frag: Box<'a, JSXFragment<'a>>) -> Expression<'a> {
         use oxc_ast::ast::*;
 
-        // Filter out whitespace-only text nodes
+        // Filter out whitespace-only text nodes that contain newlines
+        // Keep single spaces or whitespace without newlines
         let significant_children: Vec<_> = jsx_frag
             .children
             .iter()
             .filter(|child| match child {
-                JSXChild::Text(text) => !text.value.trim().is_empty(),
+                JSXChild::Text(text) => {
+                    let text_value = text.value.as_str();
+                    // Keep if not empty when trimmed OR if it's a single space without newlines
+                    !text_value.trim().is_empty() || (!text_value.contains('\n') && !text_value.is_empty())
+                },
                 _ => true,
             })
             .collect();
 
         if significant_children.len() == 1 {
-            // Single child - return it directly
-            self.jsx_child_to_expression(significant_children[0])
+            // Single child - return it directly, wrapping call expressions with _$memo
+            let expr = self.jsx_child_to_expression(significant_children[0]);
+            self.maybe_wrap_with_memo(expr)
         } else {
             // Multiple children - return as array
             let mut elements = OxcVec::new_in(self.allocator);
             for child in significant_children {
                 let expr = self.jsx_child_to_expression(child);
-                elements.push(ArrayExpressionElement::from(expr));
+                // Wrap call expressions with _$memo in fragments
+                let wrapped_expr = self.maybe_wrap_with_memo(expr);
+                elements.push(ArrayExpressionElement::from(wrapped_expr));
             }
             Expression::ArrayExpression(Box::new_in(
                 ArrayExpression {
@@ -1374,6 +1388,133 @@ impl<'a> DomExpressions<'a> {
         use oxc_allocator::CloneIn;
         // Use CloneIn trait for deep cloning
         expr.clone_in(self.allocator)
+    }
+
+    /// Wrap expressions with _$memo() for reactivity in fragments
+    /// - Call expressions (except IIFEs, templates, components) -> _$memo(expr)
+    /// - Other complex expressions (member access, etc.) -> _$memo(() => expr)
+    /// - Simple expressions (identifiers, literals) -> as-is
+    fn maybe_wrap_with_memo(&mut self, expr: Expression<'a>) -> Expression<'a> {
+        use oxc_ast::ast::*;
+
+        match &expr {
+            Expression::CallExpression(call_expr) => {
+                // Check if this is an IIFE (immediately invoked function expression)
+                let is_iife = matches!(
+                    call_expr.callee,
+                    Expression::FunctionExpression(_) | Expression::ArrowFunctionExpression(_) | Expression::ParenthesizedExpression(_)
+                );
+                
+                if is_iife {
+                    // Don't wrap IIFEs
+                    return expr;
+                }
+
+                // Check if this is a template or component call - those shouldn't be wrapped
+                if let Expression::Identifier(ident) = &call_expr.callee {
+                    if ident.name.starts_with("_tmpl$") || ident.name.starts_with("_$createComponent") {
+                        return expr;
+                    }
+                }
+
+                // Wrap other call expressions with _$memo
+                self.add_import("memo");
+                let memo_fn = IdentifierReference {
+                    span: SPAN,
+                    name: Atom::from("_$memo"),
+                    reference_id: None.into(),
+                };
+
+                let mut memo_args = OxcVec::new_in(self.allocator);
+                memo_args.push(Argument::from(expr));
+
+                let memo_call = CallExpression {
+                    span: SPAN,
+                    callee: Expression::Identifier(Box::new_in(memo_fn, self.allocator)),
+                    arguments: memo_args,
+                    optional: false,
+                    type_arguments: None,
+                    pure: false,
+                };
+
+                Expression::CallExpression(Box::new_in(memo_call, self.allocator))
+            }
+            // Simple expressions that don't need wrapping
+            Expression::Identifier(_) 
+            | Expression::StringLiteral(_) 
+            | Expression::NumericLiteral(_)
+            | Expression::BooleanLiteral(_)
+            | Expression::NullLiteral(_) => {
+                // Return as-is
+                expr
+            }
+            // Complex expressions (member access, etc.) -> wrap with _$memo(() => expr)
+            _ => {
+                // Wrap with _$memo(() => expr)
+                self.add_import("memo");
+                
+                // Create arrow function: () => expr (expression form)
+                let arrow_fn = ArrowFunctionExpression {
+                    span: SPAN,
+                    expression: true,  // Expression form, not block
+                    r#async: false,
+                    type_parameters: None,
+                    params: Box::new_in(
+                        FormalParameters {
+                            span: SPAN,
+                            kind: FormalParameterKind::ArrowFormalParameters,
+                            items: OxcVec::new_in(self.allocator),
+                            rest: None,
+                        },
+                        self.allocator,
+                    ),
+                    return_type: None,
+                    body: Box::new_in(
+                        FunctionBody {
+                            span: SPAN,
+                            directives: OxcVec::new_in(self.allocator),
+                            statements: OxcVec::from_iter_in(
+                                [Statement::ExpressionStatement(Box::new_in(
+                                    ExpressionStatement {
+                                        span: SPAN,
+                                        expression: expr,
+                                    },
+                                    self.allocator,
+                                ))],
+                                self.allocator,
+                            ),
+                        },
+                        self.allocator,
+                    ),
+                    scope_id: Default::default(),
+                    pure: false,
+                    pife: false,
+                };
+
+                // Create: _$memo(() => expr)
+                let memo_fn = IdentifierReference {
+                    span: SPAN,
+                    name: Atom::from("_$memo"),
+                    reference_id: None.into(),
+                };
+
+                let mut memo_args = OxcVec::new_in(self.allocator);
+                memo_args.push(Argument::from(Expression::ArrowFunctionExpression(
+                    Box::new_in(arrow_fn, self.allocator),
+                )));
+
+                let memo_call = CallExpression {
+                    span: SPAN,
+                    callee: Expression::Identifier(Box::new_in(memo_fn, self.allocator)),
+                    arguments: memo_args,
+                    optional: false,
+                    type_arguments: None,
+                    pure: false,
+                };
+
+                Expression::CallExpression(Box::new_in(memo_call, self.allocator))
+            }
+        }
     }
 }
 
