@@ -128,6 +128,7 @@ fn normalize_for_comparison(code: &str) -> String {
     let mut chars = result.chars().peekable();
     let mut in_number = false;
 
+    #[allow(clippy::while_let_on_iterator)]
     while let Some(ch) = chars.next() {
         if ch.is_ascii_digit() {
             if !in_number {
@@ -144,7 +145,7 @@ fn normalize_for_comparison(code: &str) -> String {
     result = normalized;
 
     // Remove all newlines and carriage returns
-    result = result.replace('\n', "").replace('\r', "");
+    result = result.replace(['\n', '\r'], "");
 
     // Remove all tabs
     result = result.replace('\t', "");

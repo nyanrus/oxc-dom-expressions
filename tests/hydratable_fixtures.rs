@@ -109,7 +109,7 @@ fn normalize_for_comparison(code: &str) -> String {
     let mut result = code.to_string();
 
     // Remove all newlines and carriage returns
-    result = result.replace('\n', "").replace('\r', "");
+    result = result.replace(['\n', '\r'], "");
 
     // Remove all indentation spaces (multiple spaces in a row)
     while result.contains("  ") {

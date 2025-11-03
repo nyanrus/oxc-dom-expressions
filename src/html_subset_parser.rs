@@ -432,7 +432,7 @@ mod tests {
         } = &nodes[0]
         {
             assert_eq!(tag, "input");
-            assert_eq!(*is_void, true);
+            assert!(*is_void);
             assert_eq!(children.len(), 0);
             assert_eq!(attributes.len(), 2);
         } else {

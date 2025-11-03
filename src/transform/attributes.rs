@@ -11,7 +11,6 @@ use oxc_allocator::Vec as OxcVec;
 use oxc_ast::ast::*;
 use oxc_span::SPAN;
 
-
 use super::DomExpressions;
 
 impl<'a> DomExpressions<'a> {

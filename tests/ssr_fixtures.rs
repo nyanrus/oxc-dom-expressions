@@ -109,7 +109,7 @@ fn normalize_for_comparison(code: &str) -> String {
     let mut result = code.to_string();
 
     // Remove all newlines and carriage returns
-    result = result.replace('\n', "").replace('\r', "");
+    result = result.replace(['\n', '\r'], "");
 
     // Remove all indentation spaces (multiple spaces in a row)
     while result.contains("  ") {
@@ -139,6 +139,7 @@ fn normalize_string_quotes(code: &str) -> String {
     let mut string_quote = '\0';
     let mut prev_char = '\0';
 
+    #[allow(clippy::while_let_on_iterator)]
     while let Some(ch) = chars.next() {
         if ch == '"' || ch == '\'' {
             if !in_string {

@@ -25,14 +25,14 @@ fn test_event_delegation_tracking() {
     "#;
 
     let ret = parse_jsx(&allocator, source);
-    let mut program = ret.program;
+    let _program = ret.program;
 
     let options = DomExpressionsOptions {
         delegate_events: true,
         ..Default::default()
     };
 
-    let mut transformer = DomExpressions::new(&allocator, options);
+    let transformer = DomExpressions::new(&allocator, options);
 
     // This would transform the JSX in a full implementation
     // For now, we're just testing that the transformer is set up correctly
@@ -211,7 +211,7 @@ fn test_transformer_with_special_bindings() {
     "#;
 
     let ret = parse_jsx(&allocator, source);
-    let program = ret.program;
+    let _program = ret.program;
 
     let options = DomExpressionsOptions::default();
     let transformer = DomExpressions::new(&allocator, options);
@@ -233,7 +233,7 @@ fn test_fragment_support() {
     "#;
 
     let ret = parse_jsx(&allocator, source);
-    let program = ret.program;
+    let _program = ret.program;
 
     let options = DomExpressionsOptions::default();
     let transformer = DomExpressions::new(&allocator, options);
@@ -250,7 +250,7 @@ fn test_component_props_handling() {
     "#;
 
     let ret = parse_jsx(&allocator, source);
-    let program = ret.program;
+    let _program = ret.program;
 
     let options = DomExpressionsOptions::default();
     let transformer = DomExpressions::new(&allocator, options);
