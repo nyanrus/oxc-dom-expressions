@@ -148,9 +148,11 @@ mod tests {
     #[test]
     fn test_minimalize_with_quote_omission() {
         let html = r#"<div id="main"></div>"#;
-        let mut options = DomExpressionsOptions::default();
-        options.omit_quotes = true;
-        options.omit_last_closing_tag = false;
+        let options = DomExpressionsOptions {
+            omit_quotes: true,
+            omit_last_closing_tag: false,
+            ..Default::default()
+        };
 
         let result = minimize_template(html, &options);
         assert_eq!(result, "<div id=main></div>");
@@ -159,9 +161,11 @@ mod tests {
     #[test]
     fn test_minimalize_with_closing_tag_omission() {
         let html = r#"<div><span></span></div>"#;
-        let mut options = DomExpressionsOptions::default();
-        options.omit_quotes = false;
-        options.omit_last_closing_tag = true;
+        let options = DomExpressionsOptions {
+            omit_quotes: false,
+            omit_last_closing_tag: true,
+            ..Default::default()
+        };
 
         let result = minimize_template(html, &options);
         // Root div should omit closing, last child span should omit closing
@@ -171,9 +175,11 @@ mod tests {
     #[test]
     fn test_minimalize_nested_with_text() {
         let html = r#"<div><div><button><span>0</span></button></div></div>"#;
-        let mut options = DomExpressionsOptions::default();
-        options.omit_quotes = false;
-        options.omit_last_closing_tag = true;
+        let options = DomExpressionsOptions {
+            omit_quotes: false,
+            omit_last_closing_tag: true,
+            ..Default::default()
+        };
 
         let result = minimize_template(html, &options);
         eprintln!("Input:  {}", html);
@@ -189,9 +195,11 @@ mod tests {
     fn test_minimalize_noscript_mixed_content() {
         // noscript with mixed content (text + element) should stop at noscript when on last path
         let html = r#"<div><noscript>No JS!!<style>div</style></noscript></div>"#;
-        let mut options = DomExpressionsOptions::default();
-        options.omit_quotes = false;
-        options.omit_last_closing_tag = true;
+        let options = DomExpressionsOptions {
+            omit_quotes: false,
+            omit_last_closing_tag: true,
+            ..Default::default()
+        };
 
         let result = minimize_template(html, &options);
         // Should stop at noscript because it has mixed content (text + element)

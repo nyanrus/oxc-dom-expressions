@@ -52,7 +52,7 @@ fn test_transformer_collects_templates() {
     traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
 
     // Should have processed JSX elements
-    assert_eq!(transformer.options().delegate_events, true);
+    assert!(transformer.options().delegate_events);
 }
 
 #[test]
@@ -147,5 +147,5 @@ fn test_ssr_mode_configuration() {
     traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
 
     assert_eq!(transformer.options().generate, GenerateMode::Ssr);
-    assert_eq!(transformer.options().hydratable, true);
+    assert!(transformer.options().hydratable);
 }
