@@ -209,7 +209,7 @@ impl<'a> DomExpressions<'a> {
                                                 stmts.push(stmt);
                                             }
                                         } else {
-                                            // Just [handler] with no data
+                                            // Just [handler] with no data - for arrays, use direct delegation even if resolvable
                                             if let Some(stmt) = self.create_delegated_event_handler(
                                                 element_var,
                                                 event_name,
@@ -232,7 +232,7 @@ impl<'a> DomExpressions<'a> {
                                                 stmts.push(stmt);
                                             }
                                         } else {
-                                            // Just [handler] with no data - treat as regular handler
+                                            // Just [handler] with no data - use direct addEventListener for arrays
                                             if let Some(stmt) = self.create_add_event_listener(
                                                 element_var,
                                                 event_name,
@@ -247,24 +247,62 @@ impl<'a> DomExpressions<'a> {
                             }
                         } else {
                             // Regular (non-array) handler
+                            // Conservative approach: only inline functions are considered resolvable
+                            // Identifiers need scope analysis to determine if they're functions,
+                            // so we treat them as non-resolvable and use the helper
+                            let is_inline_function = matches!(
+                                handler_expr,
+                                Expression::ArrowFunctionExpression(_)
+                                    | Expression::FunctionExpression(_)
+                            );
+
                             if should_delegate {
-                                // Simple delegated handler
-                                if let Some(stmt) = self.create_delegated_event_handler(
-                                    element_var,
-                                    event_name,
-                                    handler_expr,
-                                ) {
-                                    stmts.push(stmt);
+                                if is_inline_function {
+                                    // Use direct delegation for inline functions
+                                    if let Some(stmt) = self.create_delegated_event_handler(
+                                        element_var,
+                                        event_name,
+                                        handler_expr,
+                                    ) {
+                                        stmts.push(stmt);
+                                    }
+                                } else {
+                                    // Use _$addEventListener helper for identifiers (can't determine if resolvable)
+                                    self.add_import("addEventListener");
+                                    if let Some(stmt) = self.create_add_event_listener_helper(
+                                        element_var,
+                                        event_name,
+                                        handler_expr,
+                                        true, // delegated
+                                        true, // lowercase event name
+                                    ) {
+                                        stmts.push(stmt);
+                                    }
                                 }
                             } else {
-                                // Simple non-delegated handler
-                                if let Some(stmt) = self.create_add_event_listener(
-                                    element_var,
-                                    event_name,
-                                    handler_expr,
-                                    false,
-                                ) {
-                                    stmts.push(stmt);
+                                // Non-delegated handler
+                                if is_inline_function {
+                                    // Use direct addEventListener for inline functions
+                                    if let Some(stmt) = self.create_add_event_listener(
+                                        element_var,
+                                        event_name,
+                                        handler_expr,
+                                        false,
+                                    ) {
+                                        stmts.push(stmt);
+                                    }
+                                } else {
+                                    // Use helper for identifiers
+                                    self.add_import("addEventListener");
+                                    if let Some(stmt) = self.create_add_event_listener_helper(
+                                        element_var,
+                                        event_name,
+                                        handler_expr,
+                                        false, // not delegated
+                                        true,  // lowercase event name
+                                    ) {
+                                        stmts.push(stmt);
+                                    }
                                 }
                             }
                         }
@@ -291,6 +329,7 @@ impl<'a> DomExpressions<'a> {
                             event_name,
                             &expressions[expr_index],
                             false, // not delegated
+                            false, // don't lowercase - preserve case for custom events
                         ) {
                             stmts.push(stmt);
                         }

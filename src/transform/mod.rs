@@ -50,6 +50,8 @@ pub struct DomExpressions<'a> {
     pub(super) template_counter: usize,
     /// Counter for generating unique element variable names
     pub(super) element_counter: usize,
+    /// Whether we've generated the first root element (for _el$ vs _el$N)
+    pub(super) first_root_generated: bool,
     /// List of required imports (preserves insertion order)
     pub(super) required_imports: Vec<String>,
     /// Set of events that need delegation
@@ -67,7 +69,8 @@ impl<'a> DomExpressions<'a> {
             templates: Vec::new(),
             template_map: HashMap::new(),
             template_counter: 0,
-            element_counter: 0,
+            element_counter: 0, // Start at 0
+            first_root_generated: false,
             required_imports: Vec::new(),
             delegated_events: HashSet::new(),
             optimizer: TemplateOptimizer::new(),
@@ -126,5 +129,16 @@ impl<'a> DomExpressions<'a> {
         use crate::compat::element_var_name;
         self.element_counter += 1;
         element_var_name(self.element_counter)
+    }
+
+    /// Generate root element variable name
+    /// First root in file is "_el$", subsequent are numbered
+    pub(super) fn generate_root_element_var(&mut self) -> String {
+        if !self.first_root_generated {
+            self.first_root_generated = true;
+            "_el$".to_string()
+        } else {
+            self.generate_element_var()
+        }
     }
 }

@@ -165,12 +165,12 @@ impl<'a> DomExpressions<'a> {
     ) {
         use oxc_ast::ast::*;
 
-        // Generate numbered root element variable (e.g., _el$1, _el$2, etc.)
-        let root_var = self.generate_element_var();
+        // Generate root element variable (e.g., _el$)
+        let root_var = self.generate_root_element_var();
         let mut path_to_var = std::collections::HashMap::new();
         let mut declarators = OxcVec::new_in(self.allocator);
 
-        // First declarator: var _el$1 = _tmpl$()
+        // First declarator: var _el$ = _tmpl$()
         declarators.push(self.create_root_element_declarator(&root_var, template_var));
 
         // Collect all paths (including intermediate paths) we need to create

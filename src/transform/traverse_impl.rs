@@ -22,7 +22,8 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
         self.templates.clear();
         self.template_map.clear();
         self.template_counter = 0;
-        self.element_counter = 0;
+        self.element_counter = 0; // Reset to 0
+        self.first_root_generated = false;
         self.required_imports.clear();
         self.delegated_events.clear();
 
