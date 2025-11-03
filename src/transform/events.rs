@@ -368,6 +368,7 @@ impl<'a> DomExpressions<'a> {
         event_name: &str,
         handler_expr: &Expression<'a>,
         is_delegated: bool,
+        lowercase_event: bool, // Whether to lowercase the event name
     ) -> Option<Statement<'a>> {
         use oxc_allocator::CloneIn;
         use oxc_ast::ast::*;
@@ -391,11 +392,16 @@ impl<'a> DomExpressions<'a> {
             self.allocator,
         )));
 
-        // Second argument: event name as string
+        // Second argument: event name as string (lowercase if needed)
+        let event_str = if lowercase_event {
+            event_name.to_lowercase()
+        } else {
+            event_name.to_string()
+        };
         args.push(Argument::StringLiteral(Box::new_in(
             StringLiteral {
                 span: SPAN,
-                value: Atom::from(self.allocator.alloc_str(event_name)),
+                value: Atom::from(self.allocator.alloc_str(&event_str)),
                 raw: None,
                 lone_surrogates: false,
             },
