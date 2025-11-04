@@ -46,6 +46,7 @@
 use oxc_ast::ast::*;
 use std::fmt::Write;
 
+use crate::static_evaluator::{evaluate_expression, EvaluatedValue};
 use crate::utils::{
     get_event_name, get_prefix_event_name, get_prefixed_name, is_attr_attribute, is_bool_attribute,
     is_class_list_binding, is_class_name_binding, is_event_handler, is_on_capture_event,
@@ -238,13 +239,84 @@ fn build_element_html(
                             });
                         }
                     } else if is_bool_attribute(&name) {
-                        // bool: prefix attribute
+                        // bool: prefix attribute - try to inline in template when possible
                         if let Some(attr_name) = get_prefixed_name(&name) {
-                            slots.push(DynamicSlot {
-                                path: path.clone(),
-                                slot_type: SlotType::BoolAttribute(attr_name.to_string()),
-                                marker_path: None,
-                            });
+                            let mut should_add_to_template = false;
+                            let mut should_add_to_slots = false;
+
+                            // Try to evaluate the expression statically
+                            if let Some(value) = &attr.value {
+                                match value {
+                                    JSXAttributeValue::StringLiteral(lit) => {
+                                        // String literal: add to template if non-empty and not "0"
+                                        if !lit.value.is_empty() && lit.value != "0" {
+                                            should_add_to_template = true;
+                                        }
+                                    }
+                                    JSXAttributeValue::ExpressionContainer(container) => {
+                                        if let Some(expr) = container.expression.as_expression() {
+                                            // Try to evaluate the expression
+                                            let eval_result = evaluate_expression(expr);
+                                            
+                                            if eval_result.confident {
+                                                // We can determine the value at compile time
+                                                match &eval_result.value {
+                                                    Some(EvaluatedValue::Boolean(true)) => {
+                                                        should_add_to_template = true;
+                                                    }
+                                                    Some(EvaluatedValue::Boolean(false)) => {
+                                                        // false: omit attribute
+                                                    }
+                                                    Some(EvaluatedValue::String(s)) => {
+                                                        // String: add if non-empty and not "0"
+                                                        if !s.is_empty() && s != "0" {
+                                                            should_add_to_template = true;
+                                                        }
+                                                    }
+                                                    Some(EvaluatedValue::Number(n)) => {
+                                                        // Number: add if truthy (non-zero)
+                                                        if *n != 0.0 && !n.is_nan() {
+                                                            should_add_to_template = true;
+                                                        }
+                                                    }
+                                                    Some(EvaluatedValue::Null) | Some(EvaluatedValue::Undefined) => {
+                                                        // null/undefined: omit attribute
+                                                    }
+                                                    Some(EvaluatedValue::Object(_)) => {
+                                                        // Object is truthy, add attribute
+                                                        should_add_to_template = true;
+                                                    }
+                                                    None => {
+                                                        // Not evaluatable, make it dynamic
+                                                        should_add_to_slots = true;
+                                                    }
+                                                }
+                                            } else {
+                                                // Not confident, make it dynamic
+                                                should_add_to_slots = true;
+                                            }
+                                        }
+                                    }
+                                    _ => {
+                                        // Other types, make it dynamic
+                                        should_add_to_slots = true;
+                                    }
+                                }
+                            }
+
+                            // Add to template if statically determined to be true
+                            if should_add_to_template {
+                                let _ = write!(html, " {}", attr_name);
+                            }
+
+                            // Add to dynamic slots if not statically evaluatable
+                            if should_add_to_slots {
+                                slots.push(DynamicSlot {
+                                    path: path.clone(),
+                                    slot_type: SlotType::BoolAttribute(attr_name.to_string()),
+                                    marker_path: None,
+                                });
+                            }
                         }
                     } else if is_prop_attribute(&name) {
                         // prop: prefix attribute
@@ -301,17 +373,87 @@ fn build_element_html(
                             });
                         }
                     } else if let Some(value) = &attr.value {
-                        // Regular attribute
-                        if let Some(static_value) = get_static_attribute_value(value) {
-                            // Static attribute - add to template with quotes
-                            let _ = write!(html, " {}=\"{}\"", name, static_value);
-                        } else {
-                            // Dynamic attribute - track for later
+                        // Regular attribute - try to evaluate statically
+                        // BUT: innerHTML, textContent, innerText should never be inlined
+                        let is_content_attr = name == "innerHTML" || name == "textContent" || name == "innerText";
+                        
+                        if is_content_attr {
+                            // Always make content attributes dynamic
                             slots.push(DynamicSlot {
                                 path: path.clone(),
                                 slot_type: SlotType::Attribute(name.clone()),
                                 marker_path: None,
                             });
+                        } else {
+                            match value {
+                                JSXAttributeValue::StringLiteral(lit) => {
+                                    // Static string - add to template
+                                    let _ = write!(html, " {}=\"{}\"", name, lit.value);
+                                }
+                                JSXAttributeValue::ExpressionContainer(container) => {
+                                    if let Some(expr) = container.expression.as_expression() {
+                                        // Try to evaluate the expression
+                                        let eval_result = evaluate_expression(expr);
+                                        
+                                        if eval_result.confident {
+                                            // We can determine the value at compile time
+                                            match &eval_result.value {
+                                                Some(EvaluatedValue::String(s)) => {
+                                                    // String value - inline in template
+                                                    let _ = write!(html, " {}=\"{}\"", name, s);
+                                                }
+                                                Some(EvaluatedValue::Number(n)) => {
+                                                    // Number value - inline in template
+                                                    let num_str = if n.fract() == 0.0 && n.is_finite() {
+                                                        format!("{}", *n as i64)
+                                                    } else {
+                                                        n.to_string()
+                                                    };
+                                                    let _ = write!(html, " {}=\"{}\"", name, num_str);
+                                                }
+                                                Some(EvaluatedValue::Boolean(b)) => {
+                                                    // Boolean value - inline in template
+                                                    let _ = write!(html, " {}=\"{}\"", name, b);
+                                                }
+                                                _ => {
+                                                    // Other static values or non-evaluatable - make it dynamic
+                                                    slots.push(DynamicSlot {
+                                                        path: path.clone(),
+                                                        slot_type: SlotType::Attribute(name.clone()),
+                                                        marker_path: None,
+                                                    });
+                                                }
+                                            }
+                                        } else {
+                                            // Not confident - make it dynamic
+                                            slots.push(DynamicSlot {
+                                                path: path.clone(),
+                                                slot_type: SlotType::Attribute(name.clone()),
+                                                marker_path: None,
+                                            });
+                                        }
+                                    } else {
+                                        // Empty expression or other - make it dynamic
+                                        slots.push(DynamicSlot {
+                                            path: path.clone(),
+                                            slot_type: SlotType::Attribute(name.clone()),
+                                            marker_path: None,
+                                        });
+                                    }
+                                }
+                                _ => {
+                                    // Fragment or other - shouldn't happen but handle it
+                                    if let Some(static_value) = get_static_attribute_value(value) {
+                                        let _ = write!(html, " {}=\"{}\"", name, static_value);
+                                    } else {
+                                        slots.push(DynamicSlot {
+                                            path: path.clone(),
+                                            slot_type: SlotType::Attribute(name.clone()),
+                                            marker_path: None,
+                                        });
+                                    }
+                                }
+                            }
                         }
                     } else {
                         // Boolean attribute
