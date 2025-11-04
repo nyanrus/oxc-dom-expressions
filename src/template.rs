@@ -404,6 +404,22 @@ fn build_element_html(
                                 marker_path: None,
                             });
                         }
+                    } else if name == "innerHTML" || name == "textContent" || name == "innerText" {
+                        // ChildProperties - these are NEVER inlined in template
+                        // They always use property assignment at runtime
+                        // For textContent, we need to add a space child for proper element navigation
+                        if name == "textContent" {
+                            // Note: The space child will be handled in the children processing
+                            // For now, just mark as a dynamic slot
+                        }
+                        // Always add as dynamic slot for runtime property assignment
+                        if attr.value.is_some() {
+                            slots.push(DynamicSlot {
+                                path: path.clone(),
+                                slot_type: SlotType::Attribute(name.clone()),
+                                marker_path: None,
+                            });
+                        }
                     } else if let Some(value) = &attr.value {
                         // Regular attribute
                         if let Some(static_value) = get_static_attribute_value(value) {
