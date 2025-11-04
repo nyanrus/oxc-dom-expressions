@@ -238,13 +238,78 @@ fn build_element_html(
                             });
                         }
                     } else if is_bool_attribute(&name) {
-                        // bool: prefix attribute
+                        // bool: prefix attribute - inline when possible
                         if let Some(attr_name) = get_prefixed_name(&name) {
-                            slots.push(DynamicSlot {
-                                path: path.clone(),
-                                slot_type: SlotType::BoolAttribute(attr_name.to_string()),
-                                marker_path: None,
-                            });
+                            let should_inline = if let Some(value) = &attr.value {
+                                match value {
+                                    JSXAttributeValue::StringLiteral(lit) => {
+                                        // String literal: add if non-empty and not "0"
+                                        let str_val = lit.value.as_str();
+                                        if !str_val.is_empty() && str_val != "0" {
+                                            let _ = write!(html, " {}", attr_name);
+                                        }
+                                        true // Successfully inlined
+                                    }
+                                    JSXAttributeValue::ExpressionContainer(container) => {
+                                        if let Some(expr) = container.expression.as_expression() {
+                                            use crate::static_evaluator::{evaluate_expression, EvaluatedValue};
+                                            let eval_result = evaluate_expression(expr);
+                                            
+                                            if eval_result.confident {
+                                                match eval_result.value {
+                                                    Some(EvaluatedValue::Boolean(b)) => {
+                                                        if b {
+                                                            let _ = write!(html, " {}", attr_name);
+                                                        }
+                                                        true // Successfully inlined
+                                                    }
+                                                    Some(EvaluatedValue::String(s)) => {
+                                                        if !s.is_empty() && s != "0" {
+                                                            let _ = write!(html, " {}", attr_name);
+                                                        }
+                                                        true // Successfully inlined
+                                                    }
+                                                    Some(EvaluatedValue::Number(n)) => {
+                                                        if n != 0.0 {
+                                                            let _ = write!(html, " {}", attr_name);
+                                                        }
+                                                        true // Successfully inlined
+                                                    }
+                                                    Some(EvaluatedValue::Null) | Some(EvaluatedValue::Undefined) => {
+                                                        // Don't add attribute for null/undefined
+                                                        true // Successfully inlined
+                                                    }
+                                                    Some(EvaluatedValue::Object(_)) => {
+                                                        // Objects are truthy, add attribute
+                                                        let _ = write!(html, " {}", attr_name);
+                                                        true // Successfully inlined
+                                                    }
+                                                    None => false, // Can't inline
+                                                }
+                                            } else {
+                                                false // Not confident, can't inline
+                                            }
+                                        } else {
+                                            false
+                                        }
+                                    }
+                                    _ => false,
+                                }
+                            } else {
+                                // No value means boolean attribute like <div bool:disabled>
+                                // This should add the attribute
+                                let _ = write!(html, " {}", attr_name);
+                                true
+                            };
+                            
+                            // If we couldn't inline it, add as dynamic slot
+                            if !should_inline {
+                                slots.push(DynamicSlot {
+                                    path: path.clone(),
+                                    slot_type: SlotType::BoolAttribute(attr_name.to_string()),
+                                    marker_path: None,
+                                });
+                            }
                         }
                     } else if is_prop_attribute(&name) {
                         // prop: prefix attribute
@@ -256,13 +321,52 @@ fn build_element_html(
                             });
                         }
                     } else if is_attr_attribute(&name) {
-                        // attr: prefix attribute
+                        // attr: prefix attribute - inline string/numeric literals when possible
                         if let Some(attr_name) = get_prefixed_name(&name) {
-                            slots.push(DynamicSlot {
-                                path: path.clone(),
-                                slot_type: SlotType::AttrAttribute(attr_name.to_string()),
-                                marker_path: None,
-                            });
+                            let should_inline = if let Some(value) = &attr.value {
+                                match value {
+                                    JSXAttributeValue::StringLiteral(lit) => {
+                                        // String literal can be inlined
+                                        let _ = write!(html, " {}=\"{}\"", attr_name, lit.value);
+                                        true
+                                    }
+                                    JSXAttributeValue::ExpressionContainer(container) => {
+                                        if let Some(expr) = container.expression.as_expression() {
+                                            use crate::static_evaluator::{evaluate_expression, EvaluatedValue};
+                                            let eval_result = evaluate_expression(expr);
+                                            
+                                            if eval_result.confident {
+                                                match eval_result.value {
+                                                    Some(EvaluatedValue::String(s)) => {
+                                                        let _ = write!(html, " {}=\"{}\"", attr_name, s);
+                                                        true
+                                                    }
+                                                    Some(EvaluatedValue::Number(n)) => {
+                                                        let _ = write!(html, " {}=\"{}\"", attr_name, n);
+                                                        true
+                                                    }
+                                                    _ => false, // Other types need dynamic handling
+                                                }
+                                            } else {
+                                                false
+                                            }
+                                        } else {
+                                            false
+                                        }
+                                    }
+                                    _ => false,
+                                }
+                            } else {
+                                false
+                            };
+                            
+                            if !should_inline {
+                                slots.push(DynamicSlot {
+                                    path: path.clone(),
+                                    slot_type: SlotType::AttrAttribute(attr_name.to_string()),
+                                    marker_path: None,
+                                });
+                            }
                         }
                     } else if is_use_directive(&name) {
                         // use: prefix directive
