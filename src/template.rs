@@ -374,72 +374,84 @@ fn build_element_html(
                         }
                     } else if let Some(value) = &attr.value {
                         // Regular attribute - try to evaluate statically
-                        match value {
-                            JSXAttributeValue::StringLiteral(lit) => {
-                                // Static string - add to template
-                                let _ = write!(html, " {}=\"{}\"", name, lit.value);
-                            }
-                            JSXAttributeValue::ExpressionContainer(container) => {
-                                if let Some(expr) = container.expression.as_expression() {
-                                    // Try to evaluate the expression
-                                    let eval_result = evaluate_expression(expr);
-                                    
-                                    if eval_result.confident {
-                                        // We can determine the value at compile time
-                                        match &eval_result.value {
-                                            Some(EvaluatedValue::String(s)) => {
-                                                // String value - inline in template
-                                                let _ = write!(html, " {}=\"{}\"", name, s);
+                        // BUT: innerHTML, textContent, innerText should never be inlined
+                        let is_content_attr = name == "innerHTML" || name == "textContent" || name == "innerText";
+                        
+                        if is_content_attr {
+                            // Always make content attributes dynamic
+                            slots.push(DynamicSlot {
+                                path: path.clone(),
+                                slot_type: SlotType::Attribute(name.clone()),
+                                marker_path: None,
+                            });
+                        } else {
+                            match value {
+                                JSXAttributeValue::StringLiteral(lit) => {
+                                    // Static string - add to template
+                                    let _ = write!(html, " {}=\"{}\"", name, lit.value);
+                                }
+                                JSXAttributeValue::ExpressionContainer(container) => {
+                                    if let Some(expr) = container.expression.as_expression() {
+                                        // Try to evaluate the expression
+                                        let eval_result = evaluate_expression(expr);
+                                        
+                                        if eval_result.confident {
+                                            // We can determine the value at compile time
+                                            match &eval_result.value {
+                                                Some(EvaluatedValue::String(s)) => {
+                                                    // String value - inline in template
+                                                    let _ = write!(html, " {}=\"{}\"", name, s);
+                                                }
+                                                Some(EvaluatedValue::Number(n)) => {
+                                                    // Number value - inline in template
+                                                    let num_str = if n.fract() == 0.0 && n.is_finite() {
+                                                        format!("{}", *n as i64)
+                                                    } else {
+                                                        n.to_string()
+                                                    };
+                                                    let _ = write!(html, " {}=\"{}\"", name, num_str);
+                                                }
+                                                Some(EvaluatedValue::Boolean(b)) => {
+                                                    // Boolean value - inline in template
+                                                    let _ = write!(html, " {}=\"{}\"", name, b);
+                                                }
+                                                _ => {
+                                                    // Other static values or non-evaluatable - make it dynamic
+                                                    slots.push(DynamicSlot {
+                                                        path: path.clone(),
+                                                        slot_type: SlotType::Attribute(name.clone()),
+                                                        marker_path: None,
+                                                    });
+                                                }
                                             }
-                                            Some(EvaluatedValue::Number(n)) => {
-                                                // Number value - inline in template
-                                                let num_str = if n.fract() == 0.0 && n.is_finite() {
-                                                    format!("{}", *n as i64)
-                                                } else {
-                                                    n.to_string()
-                                                };
-                                                let _ = write!(html, " {}=\"{}\"", name, num_str);
-                                            }
-                                            Some(EvaluatedValue::Boolean(b)) => {
-                                                // Boolean value - inline in template
-                                                let _ = write!(html, " {}=\"{}\"", name, b);
-                                            }
-                                            _ => {
-                                                // Other static values or non-evaluatable - make it dynamic
-                                                slots.push(DynamicSlot {
-                                                    path: path.clone(),
-                                                    slot_type: SlotType::Attribute(name.clone()),
-                                                    marker_path: None,
-                                                });
-                                            }
+                                        } else {
+                                            // Not confident - make it dynamic
+                                            slots.push(DynamicSlot {
+                                                path: path.clone(),
+                                                slot_type: SlotType::Attribute(name.clone()),
+                                                marker_path: None,
+                                            });
                                         }
                                     } else {
-                                        // Not confident - make it dynamic
+                                        // Empty expression or other - make it dynamic
                                         slots.push(DynamicSlot {
                                             path: path.clone(),
                                             slot_type: SlotType::Attribute(name.clone()),
                                             marker_path: None,
                                         });
                                     }
-                                } else {
-                                    // Empty expression or other - make it dynamic
-                                    slots.push(DynamicSlot {
-                                        path: path.clone(),
-                                        slot_type: SlotType::Attribute(name.clone()),
-                                        marker_path: None,
-                                    });
                                 }
-                            }
-                            _ => {
-                                // Fragment or other - shouldn't happen but handle it
-                                if let Some(static_value) = get_static_attribute_value(value) {
-                                    let _ = write!(html, " {}=\"{}\"", name, static_value);
-                                } else {
-                                    slots.push(DynamicSlot {
-                                        path: path.clone(),
-                                        slot_type: SlotType::Attribute(name.clone()),
-                                        marker_path: None,
-                                    });
+                                _ => {
+                                    // Fragment or other - shouldn't happen but handle it
+                                    if let Some(static_value) = get_static_attribute_value(value) {
+                                        let _ = write!(html, " {}=\"{}\"", name, static_value);
+                                    } else {
+                                        slots.push(DynamicSlot {
+                                            path: path.clone(),
+                                            slot_type: SlotType::Attribute(name.clone()),
+                                            marker_path: None,
+                                        });
+                                    }
                                 }
                             }
                         }
