@@ -46,6 +46,7 @@
 use oxc_ast::ast::*;
 use std::fmt::Write;
 
+use crate::static_evaluator::{evaluate_expression, EvaluatedValue};
 use crate::utils::{
     get_event_name, get_prefix_event_name, get_prefixed_name, is_attr_attribute, is_bool_attribute,
     is_class_list_binding, is_class_name_binding, is_event_handler, is_on_capture_event,
@@ -238,13 +239,84 @@ fn build_element_html(
                             });
                         }
                     } else if is_bool_attribute(&name) {
-                        // bool: prefix attribute
+                        // bool: prefix attribute - try to inline in template when possible
                         if let Some(attr_name) = get_prefixed_name(&name) {
-                            slots.push(DynamicSlot {
-                                path: path.clone(),
-                                slot_type: SlotType::BoolAttribute(attr_name.to_string()),
-                                marker_path: None,
-                            });
+                            let mut should_add_to_template = false;
+                            let mut should_add_to_slots = false;
+
+                            // Try to evaluate the expression statically
+                            if let Some(value) = &attr.value {
+                                match value {
+                                    JSXAttributeValue::StringLiteral(lit) => {
+                                        // String literal: add to template if non-empty and not "0"
+                                        if !lit.value.is_empty() && lit.value != "0" {
+                                            should_add_to_template = true;
+                                        }
+                                    }
+                                    JSXAttributeValue::ExpressionContainer(container) => {
+                                        if let Some(expr) = container.expression.as_expression() {
+                                            // Try to evaluate the expression
+                                            let eval_result = evaluate_expression(expr);
+                                            
+                                            if eval_result.confident {
+                                                // We can determine the value at compile time
+                                                match &eval_result.value {
+                                                    Some(EvaluatedValue::Boolean(true)) => {
+                                                        should_add_to_template = true;
+                                                    }
+                                                    Some(EvaluatedValue::Boolean(false)) => {
+                                                        // false: omit attribute
+                                                    }
+                                                    Some(EvaluatedValue::String(s)) => {
+                                                        // String: add if non-empty and not "0"
+                                                        if !s.is_empty() && s != "0" {
+                                                            should_add_to_template = true;
+                                                        }
+                                                    }
+                                                    Some(EvaluatedValue::Number(n)) => {
+                                                        // Number: add if truthy (non-zero)
+                                                        if *n != 0.0 && !n.is_nan() {
+                                                            should_add_to_template = true;
+                                                        }
+                                                    }
+                                                    Some(EvaluatedValue::Null) | Some(EvaluatedValue::Undefined) => {
+                                                        // null/undefined: omit attribute
+                                                    }
+                                                    Some(EvaluatedValue::Object(_)) => {
+                                                        // Object is truthy, add attribute
+                                                        should_add_to_template = true;
+                                                    }
+                                                    None => {
+                                                        // Not evaluatable, make it dynamic
+                                                        should_add_to_slots = true;
+                                                    }
+                                                }
+                                            } else {
+                                                // Not confident, make it dynamic
+                                                should_add_to_slots = true;
+                                            }
+                                        }
+                                    }
+                                    _ => {
+                                        // Other types, make it dynamic
+                                        should_add_to_slots = true;
+                                    }
+                                }
+                            }
+
+                            // Add to template if statically determined to be true
+                            if should_add_to_template {
+                                let _ = write!(html, " {}", attr_name);
+                            }
+
+                            // Add to dynamic slots if not statically evaluatable
+                            if should_add_to_slots {
+                                slots.push(DynamicSlot {
+                                    path: path.clone(),
+                                    slot_type: SlotType::BoolAttribute(attr_name.to_string()),
+                                    marker_path: None,
+                                });
+                            }
                         }
                     } else if is_prop_attribute(&name) {
                         // prop: prefix attribute
