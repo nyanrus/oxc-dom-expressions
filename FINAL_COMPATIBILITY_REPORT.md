@@ -73,7 +73,7 @@ All internal logic tests pass, including:
 #### Missing Optimizations (Performance Impact)
 1. **Static Expression Evaluation**:
    - Babel inlines constant expressions in templates
-   - We create runtime `_$insert` calls
+   - We create runtime `_$insert` calls (runtime function for inserting dynamic content)
    - **Impact**: Slightly more runtime work, but functionally correct
 
 2. **Class Attribute Merging**:
@@ -114,7 +114,7 @@ We cannot replicate this without:
 2. Tracking all generated identifiers globally
 3. Maintaining compatibility with Babel's internal counter state
 
-**Effort to Implement**: Would require rewriting core traversal (~40+ hours)
+**Effort to Implement**: Would require rewriting core traversal logic (~40+ hours as part of the 70-100 hour total estimate below)
 
 ## Recommendations
 
@@ -165,12 +165,12 @@ Due to fundamental architectural differences, achieving byte-for-byte identical 
 ## Next Steps
 
 ### Recommended (High Impact, Low Effort)
-1. ✅ Documentation complete
-2. ✅ Security validation done
-3. ✅ Test infrastructure ready
-4. 🔄 Add more functional integration tests (not format-based)
-5. 🔄 Improve static evaluation for common patterns
-6. 🔄 Add class attribute merging
+1. [x] Documentation complete
+2. [x] Security validation done
+3. [x] Test infrastructure ready
+4. [ ] Add more functional integration tests (not format-based)
+5. [ ] Improve static evaluation for common patterns
+6. [ ] Add class attribute merging
 
 ### Not Recommended (Low ROI)
 - Implementing scope-based UID generation
