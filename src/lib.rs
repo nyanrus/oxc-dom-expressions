@@ -92,6 +92,7 @@ pub mod compat;
 pub mod html_subset_parser;
 pub mod optimizer;
 mod options;
+pub mod static_evaluator;
 pub mod template;
 pub mod template_minimizer;
 mod transform;
