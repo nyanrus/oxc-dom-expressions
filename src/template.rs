@@ -374,11 +374,16 @@ fn build_element_html(
                         }
                     } else if let Some(value) = &attr.value {
                         // Regular attribute - try to evaluate statically
-                        // BUT: innerHTML, textContent, innerText should never be inlined
+                        // BUT: innerHTML, textContent, innerText should never be inlined  
                         let is_content_attr = name == "innerHTML" || name == "textContent" || name == "innerText";
                         
                         if is_content_attr {
                             // Always make content attributes dynamic
+                            // NOTE: Babel adds space marker for textContent when expression is "dynamic enough"
+                            // (e.g., member expressions like row.label that need effect wrapper).
+                            // This requires checking if the expression will be wrapped in effect,
+                            // which needs isDynamic() logic from babel-plugin.
+                            // For now, we always create a dynamic slot without the space optimization.
                             slots.push(DynamicSlot {
                                 path: path.clone(),
                                 slot_type: SlotType::Attribute(name.clone()),
