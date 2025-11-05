@@ -101,7 +101,8 @@ impl<'a> Traverse<'a, ()> for DomExpressionsCompat2<'a> {
         // Build a template from the JSX element
         let template = crate::template::build_template_with_options(elem, Some(&self.options));
 
-        // Record template for optimization analysis
+        // Record template for optimization analysis (if opt feature is enabled)
+        #[cfg(feature = "opt")]
         self.optimizer.record_template(template.clone());
 
         // Get effect wrapper name before borrowing self mutably

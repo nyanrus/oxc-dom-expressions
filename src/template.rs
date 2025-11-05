@@ -46,7 +46,8 @@
 use oxc_ast::ast::*;
 use std::fmt::Write;
 
-use crate::static_evaluator::{evaluate_expression, EvaluatedValue};
+#[cfg(feature = "opt")]
+use crate::opt::evaluator::{evaluate_expression, EvaluatedValue};
 use crate::utils::{
     get_event_name, get_prefix_event_name, get_prefixed_name, is_attr_attribute, is_bool_attribute,
     is_class_list_binding, is_class_name_binding, is_event_handler, is_on_capture_event,
@@ -139,7 +140,11 @@ pub fn build_template_with_options(
     // SSR needs complete HTML with all closing tags and proper quoting
     if let Some(opts) = options {
         if opts.generate == GenerateMode::Dom {
-            template.html = crate::template_minimizer::minimize_template(&template.html, opts);
+            #[cfg(feature = "opt")]
+            {
+                template.html = crate::opt::minimizer::minimize_template(&template.html, opts);
+            }
+            // Without opt feature, HTML is used as-is
         } else {
             // SSR mode: unescape braces that were escaped for template literals
             // Template literals need \{ but string literals don't
@@ -254,45 +259,54 @@ fn build_element_html(
                                         }
                                     }
                                     JSXAttributeValue::ExpressionContainer(container) => {
+                                        #[cfg_attr(not(feature = "opt"), allow(unused_variables))]
                                         if let Some(expr) = container.expression.as_expression() {
-                                            // Try to evaluate the expression
-                                            let eval_result = evaluate_expression(expr);
-                                            
-                                            if eval_result.confident {
-                                                // We can determine the value at compile time
-                                                match &eval_result.value {
-                                                    Some(EvaluatedValue::Boolean(true)) => {
-                                                        should_add_to_template = true;
-                                                    }
-                                                    Some(EvaluatedValue::Boolean(false)) => {
-                                                        // false: omit attribute
-                                                    }
-                                                    Some(EvaluatedValue::String(s)) => {
-                                                        // String: add if non-empty and not "0"
-                                                        if !s.is_empty() && s != "0" {
+                                            #[cfg(feature = "opt")]
+                                            {
+                                                // Try to evaluate the expression
+                                                let eval_result = evaluate_expression(expr);
+                                                
+                                                if eval_result.confident {
+                                                    // We can determine the value at compile time
+                                                    match &eval_result.value {
+                                                        Some(EvaluatedValue::Boolean(true)) => {
                                                             should_add_to_template = true;
                                                         }
-                                                    }
-                                                    Some(EvaluatedValue::Number(n)) => {
-                                                        // Number: add if truthy (non-zero)
-                                                        if *n != 0.0 && !n.is_nan() {
+                                                        Some(EvaluatedValue::Boolean(false)) => {
+                                                            // false: omit attribute
+                                                        }
+                                                        Some(EvaluatedValue::String(s)) => {
+                                                            // String: add if non-empty and not "0"
+                                                            if !s.is_empty() && s != "0" {
+                                                                should_add_to_template = true;
+                                                            }
+                                                        }
+                                                        Some(EvaluatedValue::Number(n)) => {
+                                                            // Number: add if truthy (non-zero)
+                                                            if *n != 0.0 && !n.is_nan() {
+                                                                should_add_to_template = true;
+                                                            }
+                                                        }
+                                                        Some(EvaluatedValue::Null) | Some(EvaluatedValue::Undefined) => {
+                                                            // null/undefined: omit attribute
+                                                        }
+                                                        Some(EvaluatedValue::Object(_)) => {
+                                                            // Object is truthy, add attribute
                                                             should_add_to_template = true;
                                                         }
+                                                        None => {
+                                                            // Not evaluatable, make it dynamic
+                                                            should_add_to_slots = true;
+                                                        }
                                                     }
-                                                    Some(EvaluatedValue::Null) | Some(EvaluatedValue::Undefined) => {
-                                                        // null/undefined: omit attribute
-                                                    }
-                                                    Some(EvaluatedValue::Object(_)) => {
-                                                        // Object is truthy, add attribute
-                                                        should_add_to_template = true;
-                                                    }
-                                                    None => {
-                                                        // Not evaluatable, make it dynamic
-                                                        should_add_to_slots = true;
-                                                    }
+                                                } else {
+                                                    // Not confident, make it dynamic
+                                                    should_add_to_slots = true;
                                                 }
-                                            } else {
-                                                // Not confident, make it dynamic
+                                            }
+                                            #[cfg(not(feature = "opt"))]
+                                            {
+                                                // Without opt feature, always make it dynamic
                                                 should_add_to_slots = true;
                                             }
                                         }
@@ -396,41 +410,54 @@ fn build_element_html(
                                     let _ = write!(html, " {}=\"{}\"", name, lit.value);
                                 }
                                 JSXAttributeValue::ExpressionContainer(container) => {
+                                    #[cfg_attr(not(feature = "opt"), allow(unused_variables))]
                                     if let Some(expr) = container.expression.as_expression() {
-                                        // Try to evaluate the expression
-                                        let eval_result = evaluate_expression(expr);
-                                        
-                                        if eval_result.confident {
-                                            // We can determine the value at compile time
-                                            match &eval_result.value {
-                                                Some(EvaluatedValue::String(s)) => {
-                                                    // String value - inline in template
-                                                    let _ = write!(html, " {}=\"{}\"", name, s);
+                                        #[cfg(feature = "opt")]
+                                        {
+                                            // Try to evaluate the expression
+                                            let eval_result = evaluate_expression(expr);
+                                            
+                                            if eval_result.confident {
+                                                // We can determine the value at compile time
+                                                match &eval_result.value {
+                                                    Some(EvaluatedValue::String(s)) => {
+                                                        // String value - inline in template
+                                                        let _ = write!(html, " {}=\"{}\"", name, s);
+                                                    }
+                                                    Some(EvaluatedValue::Number(n)) => {
+                                                        // Number value - inline in template
+                                                        let num_str = if n.fract() == 0.0 && n.is_finite() {
+                                                            format!("{}", *n as i64)
+                                                        } else {
+                                                            n.to_string()
+                                                        };
+                                                        let _ = write!(html, " {}=\"{}\"", name, num_str);
+                                                    }
+                                                    Some(EvaluatedValue::Boolean(b)) => {
+                                                        // Boolean value - inline in template
+                                                        let _ = write!(html, " {}=\"{}\"", name, b);
+                                                    }
+                                                    _ => {
+                                                        // Other static values or non-evaluatable - make it dynamic
+                                                        slots.push(DynamicSlot {
+                                                            path: path.clone(),
+                                                            slot_type: SlotType::Attribute(name.clone()),
+                                                            marker_path: None,
+                                                        });
+                                                    }
                                                 }
-                                                Some(EvaluatedValue::Number(n)) => {
-                                                    // Number value - inline in template
-                                                    let num_str = if n.fract() == 0.0 && n.is_finite() {
-                                                        format!("{}", *n as i64)
-                                                    } else {
-                                                        n.to_string()
-                                                    };
-                                                    let _ = write!(html, " {}=\"{}\"", name, num_str);
-                                                }
-                                                Some(EvaluatedValue::Boolean(b)) => {
-                                                    // Boolean value - inline in template
-                                                    let _ = write!(html, " {}=\"{}\"", name, b);
-                                                }
-                                                _ => {
-                                                    // Other static values or non-evaluatable - make it dynamic
-                                                    slots.push(DynamicSlot {
-                                                        path: path.clone(),
-                                                        slot_type: SlotType::Attribute(name.clone()),
-                                                        marker_path: None,
-                                                    });
-                                                }
+                                            } else {
+                                                // Not confident - make it dynamic
+                                                slots.push(DynamicSlot {
+                                                    path: path.clone(),
+                                                    slot_type: SlotType::Attribute(name.clone()),
+                                                    marker_path: None,
+                                                });
                                             }
-                                        } else {
-                                            // Not confident - make it dynamic
+                                        }
+                                        #[cfg(not(feature = "opt"))]
+                                        {
+                                            // Without opt feature, always make it dynamic
                                             slots.push(DynamicSlot {
                                                 path: path.clone(),
                                                 slot_type: SlotType::Attribute(name.clone()),

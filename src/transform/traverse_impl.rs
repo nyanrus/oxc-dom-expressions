@@ -7,7 +7,6 @@ use oxc_span::{Atom, SPAN};
 use oxc_traverse::{Traverse, TraverseCtx};
 
 use crate::template::build_template_with_options;
-use crate::template_minimizer::minimize_template;
 
 use super::DomExpressions;
 
@@ -53,14 +52,19 @@ impl<'a> DomExpressions<'a> {
         // Build template from JSX
         let template = build_template_with_options(jsx_elem, Some(&self.options));
 
-        // Get minimized HTML
-        let html = minimize_template(&template.html, &self.options);
+        // Get HTML (minimized if opt feature is enabled)
+        #[cfg(feature = "opt")]
+        let html = crate::opt::minimizer::minimize_template(&template.html, &self.options);
+        #[cfg(not(feature = "opt"))]
+        let html = template.html.clone();
 
         // Get or create template variable
         let template_var = self.get_template_var(&html);
 
-        // Track this template in optimizer
+        // Track this template in optimizer (if opt feature is enabled)
+        #[cfg(feature = "opt")]
         self.optimizer.record_template(template.clone());
+        
         self.templates.push(template);
 
         // For now, create a simple IIFE with $clone and return

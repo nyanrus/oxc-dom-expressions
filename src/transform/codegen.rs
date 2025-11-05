@@ -10,65 +10,47 @@ use oxc_span::{Atom, SPAN};
 use super::DomExpressions;
 
 impl<'a> DomExpressions<'a> {
+    /// Helper: Create an identifier reference
+    fn ident(&self, name: &'a str) -> IdentifierReference<'a> {
+        IdentifierReference {
+            span: SPAN,
+            name: Atom::from(name),
+            reference_id: Default::default(),
+        }
+    }
+
+    /// Helper: Create a binding identifier
+    fn binding_ident(&self, name: &'a str) -> BindingIdentifier<'a> {
+        BindingIdentifier {
+            span: SPAN,
+            name: Atom::from(name),
+            symbol_id: Default::default(),
+        }
+    }
+
+    /// Helper: Create an import specifier
+    fn import_spec(&self, name: &'a str) -> ImportDeclarationSpecifier<'a> {
+        ImportDeclarationSpecifier::ImportSpecifier(Box::new_in(
+            ImportSpecifier {
+                span: SPAN,
+                imported: ModuleExportName::IdentifierName(IdentifierName {
+                    span: SPAN,
+                    name: Atom::from(name),
+                }),
+                local: self.binding_ident(name),
+                import_kind: ImportOrExportKind::Value,
+            },
+            self.allocator,
+        ))
+    }
+
     /// Create import statement: import { $template, $clone, $bind } from "solid-runtime/polyfill"
     pub(super) fn create_modern_import_statement(&self) -> Statement<'a> {
         let mut specifiers = OxcVec::new_in(self.allocator);
+        specifiers.push(self.import_spec(self.allocator.alloc_str("$template")));
+        specifiers.push(self.import_spec(self.allocator.alloc_str("$clone")));
+        specifiers.push(self.import_spec(self.allocator.alloc_str("$bind")));
 
-        // Import $template
-        specifiers.push(ImportDeclarationSpecifier::ImportSpecifier(Box::new_in(
-            ImportSpecifier {
-                span: SPAN,
-                imported: ModuleExportName::IdentifierName(IdentifierName {
-                    span: SPAN,
-                    name: Atom::from("$template"),
-                }),
-                local: BindingIdentifier {
-                    span: SPAN,
-                    name: Atom::from("$template"),
-                    symbol_id: Default::default(),
-                },
-                import_kind: ImportOrExportKind::Value,
-            },
-            self.allocator,
-        )));
-
-        // Import $clone
-        specifiers.push(ImportDeclarationSpecifier::ImportSpecifier(Box::new_in(
-            ImportSpecifier {
-                span: SPAN,
-                imported: ModuleExportName::IdentifierName(IdentifierName {
-                    span: SPAN,
-                    name: Atom::from("$clone"),
-                }),
-                local: BindingIdentifier {
-                    span: SPAN,
-                    name: Atom::from("$clone"),
-                    symbol_id: Default::default(),
-                },
-                import_kind: ImportOrExportKind::Value,
-            },
-            self.allocator,
-        )));
-
-        // Import $bind
-        specifiers.push(ImportDeclarationSpecifier::ImportSpecifier(Box::new_in(
-            ImportSpecifier {
-                span: SPAN,
-                imported: ModuleExportName::IdentifierName(IdentifierName {
-                    span: SPAN,
-                    name: Atom::from("$bind"),
-                }),
-                local: BindingIdentifier {
-                    span: SPAN,
-                    name: Atom::from("$bind"),
-                    symbol_id: Default::default(),
-                },
-                import_kind: ImportOrExportKind::Value,
-            },
-            self.allocator,
-        )));
-
-        // Determine module name - default to "solid-runtime/polyfill"
         let module_name = if self.options.module_name.contains("/web") {
             self.allocator.alloc_str("solid-runtime/polyfill")
         } else {
@@ -93,118 +75,13 @@ impl<'a> DomExpressions<'a> {
         ))
     }
 
-    /// Create template declarations for all collected templates
-    pub(super) fn create_template_declarations(&self) -> Vec<Statement<'a>> {
-        let mut declarations = Vec::new();
-        
-        // Clone to avoid borrow issues
-        let template_entries: Vec<_> = self.template_map.iter().collect();
-        
-        for (html, var_name) in template_entries {
-            // Create template literal for $template call
-            let mut quasis = OxcVec::new_in(self.allocator);
-            quasis.push(TemplateElement {
-                span: SPAN,
-                tail: true,
-                value: TemplateElementValue {
-                    raw: Atom::from(self.allocator.alloc_str(html)),
-                    cooked: Some(Atom::from(self.allocator.alloc_str(html))),
-                },
-                lone_surrogates: false,
-            });
-
-            let template_literal = TemplateLiteral {
-                span: SPAN,
-                quasis,
-                expressions: OxcVec::new_in(self.allocator),
-            };
-
-            // Create $template() call
-            let mut arguments = OxcVec::new_in(self.allocator);
-            arguments.push(Argument::TemplateLiteral(Box::new_in(template_literal, self.allocator)));
-
-            let template_call = Expression::CallExpression(Box::new_in(
-                CallExpression {
-                    span: SPAN,
-                    callee: Expression::Identifier(Box::new_in(
-                        IdentifierReference {
-                            span: SPAN,
-                            name: Atom::from("$template"),
-                            reference_id: Default::default(),
-                        },
-                        self.allocator,
-                    )),
-                    arguments,
-                    optional: false,
-                    type_arguments: None,
-                    pure: false,
-                },
-                self.allocator,
-            ));
-
-            // Create const declaration
-            let var_name_atom = Atom::from(self.allocator.alloc_str(var_name.as_str()));
-            
-            let declarator = VariableDeclarator {
-                span: SPAN,
-                kind: VariableDeclarationKind::Const,
-                id: BindingPattern {
-                    kind: BindingPatternKind::BindingIdentifier(Box::new_in(
-                        BindingIdentifier {
-                            span: SPAN,
-                            name: var_name_atom,
-                            symbol_id: Default::default(),
-                        },
-                        self.allocator,
-                    )),
-                    type_annotation: None,
-                    optional: false,
-                },
-                init: Some(template_call),
-                definite: false,
-            };
-
-            let mut declarators = OxcVec::new_in(self.allocator);
-            declarators.push(declarator);
-
-            declarations.push(Statement::VariableDeclaration(Box::new_in(
-                VariableDeclaration {
-                    span: SPAN,
-                    kind: VariableDeclarationKind::Const,
-                    declarations: declarators,
-                    declare: false,
-                },
-                self.allocator,
-            )));
-        }
-        
-        declarations
-    }
-
-    /// Create a $clone() call expression
-    pub(super) fn create_clone_call(&self, template_var: &'a str) -> Expression<'a> {
-        let mut arguments = OxcVec::new_in(self.allocator);
-        arguments.push(Argument::Identifier(Box::new_in(
-            IdentifierReference {
-                span: SPAN,
-                name: Atom::from(template_var),
-                reference_id: Default::default(),
-            },
-            self.allocator,
-        )));
-
+    /// Helper: Create a call expression
+    fn call_expr(&self, callee_name: &'a str, args: OxcVec<'a, Argument<'a>>) -> Expression<'a> {
         Expression::CallExpression(Box::new_in(
             CallExpression {
                 span: SPAN,
-                callee: Expression::Identifier(Box::new_in(
-                    IdentifierReference {
-                        span: SPAN,
-                        name: Atom::from("$clone"),
-                        reference_id: Default::default(),
-                    },
-                    self.allocator,
-                )),
-                arguments,
+                callee: Expression::Identifier(Box::new_in(self.ident(callee_name), self.allocator)),
+                arguments: args,
                 optional: false,
                 type_arguments: None,
                 pure: false,
@@ -213,27 +90,95 @@ impl<'a> DomExpressions<'a> {
         ))
     }
 
+    /// Helper: Create a const declaration
+    fn const_decl(&self, name: &'a str, init: Expression<'a>) -> Statement<'a> {
+        let declarator = VariableDeclarator {
+            span: SPAN,
+            kind: VariableDeclarationKind::Const,
+            id: BindingPattern {
+                kind: BindingPatternKind::BindingIdentifier(Box::new_in(
+                    self.binding_ident(name),
+                    self.allocator,
+                )),
+                type_annotation: None,
+                optional: false,
+            },
+            init: Some(init),
+            definite: false,
+        };
+
+        let mut declarators = OxcVec::new_in(self.allocator);
+        declarators.push(declarator);
+
+        Statement::VariableDeclaration(Box::new_in(
+            VariableDeclaration {
+                span: SPAN,
+                kind: VariableDeclarationKind::Const,
+                declarations: declarators,
+                declare: false,
+            },
+            self.allocator,
+        ))
+    }
+
+    /// Create template declarations for all collected templates
+    pub(super) fn create_template_declarations(&self) -> Vec<Statement<'a>> {
+        self.template_map
+            .iter()
+            .map(|(html, var_name)| {
+                // Create template literal
+                let mut quasis = OxcVec::new_in(self.allocator);
+                quasis.push(TemplateElement {
+                    span: SPAN,
+                    tail: true,
+                    value: TemplateElementValue {
+                        raw: Atom::from(self.allocator.alloc_str(html)),
+                        cooked: Some(Atom::from(self.allocator.alloc_str(html))),
+                    },
+                    lone_surrogates: false,
+                });
+
+                // Create $template(html) call
+                let mut args = OxcVec::new_in(self.allocator);
+                args.push(Argument::TemplateLiteral(Box::new_in(
+                    TemplateLiteral {
+                        span: SPAN,
+                        quasis,
+                        expressions: OxcVec::new_in(self.allocator),
+                    },
+                    self.allocator,
+                )));
+
+                let template_call = self.call_expr(self.allocator.alloc_str("$template"), args);
+                self.const_decl(self.allocator.alloc_str(var_name.as_str()), template_call)
+            })
+            .collect()
+    }
+
+    /// Create a $clone() call expression
+    pub(super) fn create_clone_call(&self, template_var: &'a str) -> Expression<'a> {
+        let mut args = OxcVec::new_in(self.allocator);
+        args.push(Argument::Identifier(Box::new_in(self.ident(template_var), self.allocator)));
+        self.call_expr(self.allocator.alloc_str("$clone"), args)
+    }
+
     /// Create an IIFE: (() => { ...statements... return _root$; })()
     pub(super) fn create_iife(&self, statements: Vec<Statement<'a>>, root_var: &'a str) -> Expression<'a> {
-        // Add return statement
         let mut all_stmts = OxcVec::from_iter_in(statements, self.allocator);
         
+        // Add return statement
         all_stmts.push(Statement::ReturnStatement(Box::new_in(
             ReturnStatement {
                 span: SPAN,
                 argument: Some(Expression::Identifier(Box::new_in(
-                    IdentifierReference {
-                        span: SPAN,
-                        name: Atom::from(root_var),
-                        reference_id: Default::default(),
-                    },
+                    self.ident(root_var),
                     self.allocator,
                 ))),
             },
             self.allocator,
         )));
 
-        // Create arrow function
+        // Create arrow function with statements
         let arrow_fn = ArrowFunctionExpression {
             span: SPAN,
             expression: false,
@@ -262,7 +207,7 @@ impl<'a> DomExpressions<'a> {
             pure: false,
         };
 
-        // Wrap arrow function in parens and call it
+        // Wrap arrow function in parens and call it: (() => {...})()
         Expression::CallExpression(Box::new_in(
             CallExpression {
                 span: SPAN,

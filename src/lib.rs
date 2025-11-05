@@ -77,9 +77,9 @@
 //!
 //! ### Core Modules
 //!
-//! - [`transform`]: Main transformation logic and AST traversal using AstBuilder
+//! - [`transform`]: Modern transformation logic using declarative $bind API
+//! - [`compat2`]: Babel-compatible transformation (legacy format)
 //! - [`template`]: Template string generation and dynamic slot tracking
-//! - [`optimizer`]: Template optimization and statistics
 //! - [`utils`]: Utility functions for component detection, event handling, etc.
 //!
 //! ### Configuration
@@ -92,23 +92,29 @@
 //!   - Output normalization for fixture test compatibility
 //!   - Import ordering to match babel plugin output
 //!
+//! ### Optimization
+//!
+//! - [`opt`]: Optimization and minimization utilities
+//!   - Template deduplication and statistics
+//!   - HTML minimization
+//!   - Static expression evaluation
+//!
 //! ### Internal Modules
 //!
 //! - [`html_subset_parser`]: HTML parsing for template generation
-//! - [`template_minimizer`]: Template minimization and formatting
 
 pub mod compat;
 pub mod compat2;
 pub mod html_subset_parser;
-pub mod optimizer;
+#[cfg(feature = "opt")]
+pub mod opt;
 mod options;
-pub mod static_evaluator;
 pub mod template;
-pub mod template_minimizer;
 mod transform;
 pub mod utils;
 
-pub use optimizer::{Optimization, OptimizationKind, TemplateOptimizer, TemplateStats};
+#[cfg(feature = "opt")]
+pub use opt::{Optimization, OptimizationKind, TemplateOptimizer, TemplateStats};
 pub use options::{DomExpressionsOptions, GenerateMode};
 pub use transform::DomExpressions;
 pub use compat2::DomExpressionsCompat2;
