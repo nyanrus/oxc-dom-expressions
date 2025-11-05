@@ -11,9 +11,9 @@ use oxc_allocator::Vec as OxcVec;
 use oxc_ast::ast::*;
 use oxc_span::SPAN;
 
-use super::DomExpressions;
+use super::DomExpressionsCompat2;
 
-impl<'a> DomExpressions<'a> {
+impl<'a> DomExpressionsCompat2<'a> {
     /// Create a delegated event handler assignment
     pub(super) fn create_delegated_event_handler(
         &self,

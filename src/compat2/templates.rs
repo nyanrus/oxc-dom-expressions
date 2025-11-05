@@ -12,9 +12,9 @@ use oxc_span::SPAN;
 
 use crate::template::{SlotType, Template};
 
-use super::DomExpressions;
+use super::DomExpressionsCompat2;
 
-impl<'a> DomExpressions<'a> {
+impl<'a> DomExpressionsCompat2<'a> {
     /// Create a template call expression
     pub(super) fn create_template_call(
         &self,
