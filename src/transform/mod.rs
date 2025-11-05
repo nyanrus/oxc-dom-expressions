@@ -6,11 +6,32 @@
 //!
 //! # Output Format
 //!
-//! The modern format uses three main runtime functions:
+//! The modern format uses three main runtime functions from `solid-runtime/polyfill`:
 //!
 //! - **$template(html)**: Parses HTML template string once at module scope
 //! - **$clone(template)**: Clones the parsed template for each instance
 //! - **$bind(root, path, bindings)**: Declaratively binds properties/events to element at path
+//!
+//! ## Example Input
+//!
+//! ```jsx
+//! const template = (
+//!   <div id="main" {...results} classList={{ selected: unknown }} style={{ color }}>
+//!     <h1
+//!       class="base"
+//!       id={id}
+//!       {...results()}
+//!       title={welcoming()}
+//!       style={{ "background-color": color(), "margin-right": "40px" }}
+//!       classList={{ dynamic: dynamic(), selected }}
+//!     >
+//!       <a href={"/"} ref={link} classList={{ "ccc ddd": true }}>
+//!         Welcome
+//!       </a>
+//!     </h1>
+//!   </div>
+//! );
+//! ```
 //!
 //! ## Example Output
 //!
@@ -30,6 +51,7 @@
 //!   
 //!   $bind(_root$, [0, 0], {
 //!     id: () => id,
+//!     spread: [() => results()],
 //!     title: () => welcoming(),
 //!     style: { "background-color": () => color(), "margin-right": "40px" },
 //!     classList: { dynamic: () => dynamic(), selected: () => selected }
@@ -47,9 +69,9 @@
 //! # Path System
 //!
 //! Elements are referenced by their child index path from the root:
-//! - `[0]`: First child of root
-//! - `[0, 0]`: First child of first child
-//! - `[0, 0, 0]`: First child's first child's first child
+//! - `[0]`: First child of root (`div`)
+//! - `[0, 0]`: First child of first child (`h1`)
+//! - `[0, 0, 0]`: First child's first child's first child (`a`)
 //!
 //! # Binding Options
 //!
@@ -66,30 +88,32 @@
 //! - **bool:name**: Boolean attributes
 //! - **use:directive**: Custom directives
 //! - Any other key: Regular attributes (reactive if value is a function)
+//!
+//! # Implementation Status
+//!
+//! This module is currently a stub/placeholder. The actual implementation requires:
+//! 1. AST construction for $template, $clone, and $bind calls
+//! 2. Path tracking for element bindings
+//! 3. Binding object generation from JSX attributes
+//! 4. Template HTML generation with minimization
+//! 5. Import statement injection
+//!
+//! For the working babel-compatible implementation, see the `compat2` module.
 
 use oxc_allocator::Allocator;
-use std::collections::{HashMap, HashSet};
+use oxc_ast::ast::*;
+use oxc_traverse::{Traverse, TraverseCtx};
 
 use crate::optimizer::{TemplateOptimizer, TemplateStats};
 use crate::options::DomExpressionsOptions;
-use crate::template::Template;
 
-// Sub-modules
-mod bindings;
-mod codegen;
-mod traverse_impl;
-
-/// The modern DOM expressions transformer
+/// The modern DOM expressions transformer (stub)
+///
+/// This is currently a placeholder that does not transform JSX.
+/// The transformation logic will be implemented in future versions.
 pub struct DomExpressions<'a> {
     pub(super) allocator: &'a Allocator,
     pub(super) options: DomExpressionsOptions,
-    /// Collection of templates generated during transformation
-    pub(super) templates: Vec<Template>,
-    /// Map of template HTML to variable name for deduplication
-    pub(super) template_map: HashMap<String, String>,
-    /// Counter for generating unique template variable names
-    pub(super) template_counter: usize,
-    /// Optimizer for template analysis
     pub(super) optimizer: TemplateOptimizer,
 }
 
@@ -99,9 +123,6 @@ impl<'a> DomExpressions<'a> {
         Self {
             allocator,
             options,
-            templates: Vec::new(),
-            template_map: HashMap::new(),
-            template_counter: 0,
             optimizer: TemplateOptimizer::new(),
         }
     }
@@ -120,25 +141,9 @@ impl<'a> DomExpressions<'a> {
     pub fn get_reused_templates(&self) -> Vec<(String, usize)> {
         self.optimizer.get_reused_templates()
     }
+}
 
-    /// Generate a unique template variable name
-    pub(super) fn generate_template_var(&mut self) -> String {
-        self.template_counter += 1;
-        if self.template_counter == 1 {
-            "_tmpl$".to_string()
-        } else {
-            format!("_tmpl${}", self.template_counter)
-        }
-    }
-
-    /// Get or create a template variable for given HTML
-    pub(super) fn get_template_var(&mut self, html: &str) -> String {
-        if let Some(var) = self.template_map.get(html) {
-            var.clone()
-        } else {
-            let var = self.generate_template_var();
-            self.template_map.insert(html.to_string(), var.clone());
-            var
-        }
-    }
+impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
+    // Stub implementation - does not transform JSX
+    // In a full implementation, this would transform JSX to $template/$clone/$bind calls
 }
