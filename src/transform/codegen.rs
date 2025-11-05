@@ -1,11 +1,17 @@
-//! Code generation helpers
+//! AST-based code generation helpers
 //!
-//! This module contains helper methods for generating code:
-//! - Runtime function calls
+//! This module contains helper methods for generating AST nodes:
+//! - Runtime function calls using AstBuilder
 //! - Import statement generation
 //! - Expression extraction from JSX
 //! - Insert call generation
 //! - Expression utilities (clone, memo wrapping)
+//!
+//! All code generation in this module follows Oxc's best practices:
+//! - Manual AST construction using `AstBuilder` (accessed via `self.allocator`)
+//! - Type-safe node creation with `Box::new_in` and `OxcVec::new_in`
+//! - No string-based code generation
+//! - Comments in the code document what the generated AST will look like
 
 use oxc_allocator::Box;
 use oxc_allocator::Vec as OxcVec;

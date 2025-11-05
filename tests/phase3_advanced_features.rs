@@ -6,6 +6,9 @@
 //! - Component handling
 //! - Fragment support
 //! - Import injection
+//!
+//! Note: These tests focus on the AST-based transformation logic.
+//! The actual code generation is tested through integration tests in dom_fixtures.rs.
 
 use oxc_allocator::Allocator;
 use oxc_dom_expressions::{DomExpressions, DomExpressionsOptions, GenerateMode};
@@ -122,78 +125,6 @@ fn test_component_detection() {
 }
 
 #[test]
-fn test_ref_code_generation() {
-    use oxc_dom_expressions::codegen::generate_ref_code;
-
-    let code = generate_ref_code("_el$", "myRef");
-    assert!(code.contains("typeof myRef === 'function'"));
-    assert!(code.contains("myRef(_el$)"));
-    assert!(code.contains("myRef = _el$"));
-}
-
-#[test]
-fn test_class_list_code_generation() {
-    use oxc_dom_expressions::codegen::generate_class_list_code;
-
-    let options = DomExpressionsOptions::default();
-    let code = generate_class_list_code("_el$", "{ active: isActive() }", &options);
-
-    assert!(code.contains("effect"));
-    assert!(code.contains("classList"));
-    assert!(code.contains("_el$"));
-    assert!(code.contains("{ active: isActive() }"));
-}
-
-#[test]
-fn test_style_code_generation() {
-    use oxc_dom_expressions::codegen::generate_style_code;
-
-    let options = DomExpressionsOptions::default();
-    let code = generate_style_code("_el$", "{ color: 'red' }", &options);
-
-    assert!(code.contains("effect"));
-    assert!(code.contains("style"));
-    assert!(code.contains("_el$"));
-}
-
-#[test]
-fn test_on_event_code_generation() {
-    use oxc_dom_expressions::codegen::generate_on_event_code;
-
-    let code = generate_on_event_code("_el$", "CustomEvent", "handler");
-    assert!(code.contains("addEventListener"));
-    assert!(code.contains("CustomEvent"));
-    assert!(code.contains("handler"));
-}
-
-#[test]
-fn test_on_capture_code_generation() {
-    use oxc_dom_expressions::codegen::generate_on_capture_code;
-
-    let code = generate_on_capture_code("_el$", "Click", "handler");
-    assert!(code.contains("addEventListener"));
-    assert!(code.contains("Click"));
-    assert!(code.contains("handler"));
-    assert!(code.contains("capture: true"));
-}
-
-#[test]
-fn test_event_delegation_code() {
-    use oxc_dom_expressions::codegen::generate_event_handler_code;
-
-    // Delegated event
-    let delegated = generate_event_handler_code("_el$", "click", "handler", true);
-    assert!(delegated.contains("$$click"));
-    assert!(delegated.contains("handler"));
-
-    // Non-delegated event
-    let direct = generate_event_handler_code("_el$", "click", "handler", false);
-    assert!(direct.contains("addEventListener"));
-    assert!(direct.contains("click"));
-    assert!(direct.contains("handler"));
-}
-
-#[test]
 fn test_transformer_with_special_bindings() {
     let allocator = Allocator::default();
     let source = r#"
@@ -289,75 +220,4 @@ fn test_ssr_mode_with_special_bindings() {
     assert_eq!(transformer.options().generate, GenerateMode::Ssr);
     assert!(!transformer.options().delegate_events);
     assert!(transformer.options().hydratable);
-}
-
-#[test]
-fn test_template_transformation_with_special_bindings() {
-    use oxc_dom_expressions::codegen::generate_template_transformation;
-    use oxc_dom_expressions::template::{DynamicSlot, SlotType, Template};
-
-    let template = Template {
-        html: String::from("<div></div>"),
-        dynamic_slots: vec![
-            DynamicSlot {
-                path: vec![],
-                slot_type: SlotType::Ref,
-                marker_path: None,
-            },
-            DynamicSlot {
-                path: vec![],
-                slot_type: SlotType::ClassList,
-                marker_path: None,
-            },
-            DynamicSlot {
-                path: vec![],
-                slot_type: SlotType::StyleObject,
-                marker_path: None,
-            },
-        ],
-    };
-
-    let options = DomExpressionsOptions::default();
-    let code = generate_template_transformation(&template, "_tmpl", &options);
-
-    // Check that all special bindings generate code
-    assert!(code.contains("typeof")); // ref check
-    assert!(code.contains("classList")); // classList call
-    assert!(code.contains("style")); // style call
-    assert!(code.contains("effect")); // effect wrapper
-}
-
-#[test]
-fn test_event_delegation_slot_types() {
-    use oxc_dom_expressions::codegen::generate_template_transformation;
-    use oxc_dom_expressions::template::{DynamicSlot, SlotType, Template};
-
-    let template = Template {
-        html: String::from("<div></div>"),
-        dynamic_slots: vec![
-            DynamicSlot {
-                path: vec![],
-                slot_type: SlotType::EventHandler("click".to_string()),
-                marker_path: None,
-            },
-            DynamicSlot {
-                path: vec![],
-                slot_type: SlotType::OnEvent("CustomEvent".to_string()),
-                marker_path: None,
-            },
-            DynamicSlot {
-                path: vec![],
-                slot_type: SlotType::OnCaptureEvent("Click".to_string()),
-                marker_path: None,
-            },
-        ],
-    };
-
-    let options = DomExpressionsOptions::default();
-    let code = generate_template_transformation(&template, "_tmpl", &options);
-
-    // Check different event handling methods
-    assert!(code.contains("$$click")); // delegated event
-    assert!(code.contains("addEventListener")); // direct events
-    assert!(code.contains("capture: true")); // capture event
 }
