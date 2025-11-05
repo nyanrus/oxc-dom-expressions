@@ -106,12 +106,14 @@
 pub mod compat;
 pub mod compat2;
 pub mod html_subset_parser;
+#[cfg(feature = "opt")]
 pub mod opt;
 mod options;
 pub mod template;
 mod transform;
 pub mod utils;
 
+#[cfg(feature = "opt")]
 pub use opt::{Optimization, OptimizationKind, TemplateOptimizer, TemplateStats};
 pub use options::{DomExpressionsOptions, GenerateMode};
 pub use transform::DomExpressions;

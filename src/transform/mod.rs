@@ -6,6 +6,7 @@
 use oxc_allocator::Allocator;
 use std::collections::HashMap;
 
+#[cfg(feature = "opt")]
 use crate::opt::{TemplateOptimizer, TemplateStats};
 use crate::options::DomExpressionsOptions;
 use crate::template::Template;
@@ -25,6 +26,7 @@ pub struct DomExpressions<'a> {
     /// Counter for generating unique template variable names
     pub(super) template_counter: usize,
     /// Optimizer for template analysis
+    #[cfg(feature = "opt")]
     pub(super) optimizer: TemplateOptimizer,
 }
 
@@ -37,6 +39,7 @@ impl<'a> DomExpressions<'a> {
             templates: Vec::new(),
             template_map: HashMap::new(),
             template_counter: 0,
+            #[cfg(feature = "opt")]
             optimizer: TemplateOptimizer::new(),
         }
     }
@@ -47,11 +50,13 @@ impl<'a> DomExpressions<'a> {
     }
 
     /// Get template statistics for optimization analysis
+    #[cfg(feature = "opt")]
     pub fn get_template_stats(&self) -> TemplateStats {
         self.optimizer.get_stats()
     }
 
     /// Get list of templates that were reused (deduplicated)
+    #[cfg(feature = "opt")]
     pub fn get_reused_templates(&self) -> Vec<(String, usize)> {
         self.optimizer.get_reused_templates()
     }

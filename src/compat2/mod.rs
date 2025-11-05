@@ -79,6 +79,7 @@
 use oxc_allocator::Allocator;
 use std::collections::{HashMap, HashSet};
 
+#[cfg(feature = "opt")]
 use crate::opt::{TemplateOptimizer, TemplateStats};
 use crate::options::DomExpressionsOptions;
 use crate::template::Template;
@@ -110,6 +111,7 @@ pub struct DomExpressionsCompat2<'a> {
     /// Set of events that need delegation
     pub(super) delegated_events: HashSet<String>,
     /// Optimizer for template analysis
+    #[cfg(feature = "opt")]
     pub(super) optimizer: TemplateOptimizer,
 }
 
@@ -126,6 +128,7 @@ impl<'a> DomExpressionsCompat2<'a> {
             first_root_generated: false,
             required_imports: Vec::new(),
             delegated_events: HashSet::new(),
+            #[cfg(feature = "opt")]
             optimizer: TemplateOptimizer::new(),
         }
     }
@@ -136,11 +139,13 @@ impl<'a> DomExpressionsCompat2<'a> {
     }
 
     /// Get template statistics for optimization analysis
+    #[cfg(feature = "opt")]
     pub fn get_template_stats(&self) -> TemplateStats {
         self.optimizer.get_stats()
     }
 
     /// Get list of templates that were reused (deduplicated)
+    #[cfg(feature = "opt")]
     pub fn get_reused_templates(&self) -> Vec<(String, usize)> {
         self.optimizer.get_reused_templates()
     }

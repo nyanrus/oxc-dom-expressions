@@ -36,6 +36,20 @@ Add this to your `Cargo.toml`:
 oxc-dom-expressions = "0.1"
 ```
 
+### Optional Features
+
+The `opt` feature (enabled by default) provides optimization capabilities:
+- Template deduplication and statistics
+- HTML minimization
+- Static expression evaluation
+
+To disable optimizations and reduce binary size:
+
+```toml
+[dependencies]
+oxc-dom-expressions = { version = "0.1", default-features = false }
+```
+
 ## Usage
 
 ### Modern Transform (Recommended for new projects)
