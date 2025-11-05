@@ -3,6 +3,58 @@
 //! This module implements the core JSX to DOM transformation logic for oxc-dom-expressions.
 //! It transforms JSX syntax into optimized DOM manipulation code using a template-based approach.
 //!
+//! # AST-Based Code Generation
+//!
+//! This transformer follows Oxc's recommended practices for AST transformation:
+//!
+//! ## Core Principles
+//!
+//! - **Manual AST Construction**: All code is generated using `AstBuilder` through the allocator
+//! - **No String Manipulation**: Code is never generated via string concatenation or formatting
+//! - **Type Safety**: The AST API ensures type-safe and correct code generation
+//! - **Single Pass**: All transformations happen in one traversal for maximum performance
+//!
+//! ## Code Injection Patterns
+//!
+//! ### 1. Node Replacement
+//! In `exit_*` methods, JSX nodes are replaced with generated AST nodes:
+//! ```rust,ignore
+//! fn exit_expression(&mut self, expr: &mut Expression<'a>, ctx: &mut TraverseCtx<'a>) {
+//!     if let Expression::JSXElement(jsx_elem) = expr {
+//!         *expr = self.transform_jsx_element(jsx_elem, ctx);
+//!     }
+//! }
+//! ```
+//!
+//! ### 2. Statement Insertion
+//! New statements are created and inserted into blocks:
+//! ```rust,ignore
+//! let insert_stmt = self.create_insert_call(element, expression);
+//! statements.push(insert_stmt);
+//! ```
+//!
+//! ## Example AST Construction
+//!
+//! All AST nodes are constructed using the `AstBuilder` API:
+//! ```rust,ignore
+//! // Creating a call expression: _$insert(element, value)
+//! let call_expr = CallExpression {
+//!     span: SPAN,
+//!     callee: Expression::Identifier(Box::new_in(
+//!         IdentifierReference {
+//!             span: SPAN,
+//!             name: Atom::from("_$insert"),
+//!             reference_id: None.into(),
+//!         },
+//!         self.allocator,
+//!     )),
+//!     arguments: args,
+//!     optional: false,
+//!     type_arguments: None,
+//!     pure: false,
+//! };
+//! ```
+//!
 //! # Module Organization
 //!
 //! The transform module is split into several sub-modules for better organization:
@@ -12,7 +64,7 @@
 //! - **attributes.rs** - Attribute transformations (style, class, etc.)
 //! - **templates.rs** - Template and IIFE generation
 //! - **components.rs** - Component and fragment transformations  
-//! - **codegen.rs** - Code generation helpers (imports, declarations, etc.)
+//! - **codegen.rs** - AST-based code generation helpers (imports, declarations, etc.)
 //! - **traverse_impl.rs** - Traverse trait implementation
 //!
 //! # Transformation Flow
@@ -20,7 +72,7 @@
 //! 1. **Parse**: JSX is parsed into an AST by the oxc parser
 //! 2. **Traverse**: The transformer traverses the AST bottom-up
 //! 3. **Template Building**: JSX elements are converted to HTML templates with dynamic slots
-//! 4. **Code Generation**: Generate runtime calls for dynamic content
+//! 4. **AST Generation**: Generate runtime calls using AstBuilder for dynamic content
 //! 5. **Output**: Emit optimized JavaScript with template literals and runtime library calls
 
 use oxc_allocator::Allocator;

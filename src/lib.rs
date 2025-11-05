@@ -57,18 +57,28 @@
 //! The transformation happens in several phases:
 //!
 //! 1. **Parse**: JSX source code is parsed into an AST
-//! 2. **Traverse**: The AST is traversed bottom-up
+//! 2. **Traverse**: The AST is traversed bottom-up using the Traverse trait
 //! 3. **Template Building**: JSX elements → HTML templates + dynamic slots
-//! 4. **Code Generation**: Generate runtime calls for dynamic content
+//! 4. **AST-Based Code Generation**: Generate runtime calls using AstBuilder (no string manipulation)
 //! 5. **Optimization**: Deduplicate templates and collect statistics
+//!
+//! ### Code Generation Philosophy
+//!
+//! This transformer follows Oxc's best practices for AST transformation:
+//! - **Manual AST Construction**: All code is generated using `AstBuilder`, never through string concatenation
+//! - **Type Safety**: The AST API ensures type-safe code generation
+//! - **Single Pass**: All transformations happen in one traversal for maximum performance
+//! - **Node Replacement**: Transform JSX by replacing nodes in `exit_*` methods
+//! - **Statement Insertion**: Insert new statements by manipulating the statements vector
+//!
+//! For more details on the AST-based approach, see the [`transform`] module documentation.
 //!
 //! ## Modules
 //!
 //! ### Core Modules
 //!
-//! - [`transform`]: Main transformation logic and AST traversal
+//! - [`transform`]: Main transformation logic and AST traversal using AstBuilder
 //! - [`template`]: Template string generation and dynamic slot tracking
-//! - [`codegen`]: Code generation utilities for runtime calls
 //! - [`optimizer`]: Template optimization and statistics
 //! - [`utils`]: Utility functions for component detection, event handling, etc.
 //!
@@ -87,7 +97,6 @@
 //! - [`html_subset_parser`]: HTML parsing for template generation
 //! - [`template_minimizer`]: Template minimization and formatting
 
-pub mod codegen;
 pub mod compat;
 pub mod html_subset_parser;
 pub mod optimizer;
