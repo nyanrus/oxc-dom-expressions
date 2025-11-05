@@ -38,14 +38,40 @@ oxc-dom-expressions = "0.1"
 
 ## Usage
 
+### Modern Transform (Recommended for new projects)
+
 ```rust
 use oxc_allocator::Allocator;
 use oxc_dom_expressions::{DomExpressions, DomExpressionsOptions};
 
 let allocator = Allocator::default();
-let options = DomExpressionsOptions::new("solid-js/web");
+let options = DomExpressionsOptions::new("solid-runtime/polyfill");
 let transformer = DomExpressions::new(&allocator, options);
 ```
+
+Produces clean, declarative output:
+```javascript
+import { $template, $clone, $bind } from "solid-runtime/polyfill";
+const _tmpl$ = $template(`<div id="main"><h1>...</h1></div>`);
+const element = (() => {
+  const _root$ = $clone(_tmpl$);
+  $bind(_root$, [0], { id: () => dynamicId });
+  return _root$;
+})();
+```
+
+### Babel-Compatible Transform
+
+```rust
+use oxc_allocator::Allocator;
+use oxc_dom_expressions::{DomExpressionsCompat2, DomExpressionsOptions};
+
+let allocator = Allocator::default();
+let options = DomExpressionsOptions::new("solid-js/web");
+let transformer = DomExpressionsCompat2::new(&allocator, options);
+```
+
+Produces babel-plugin-jsx-dom-expressions compatible output.
 
 ### Configuration Options
 
@@ -270,13 +296,28 @@ This implementation provides core transformation infrastructure for babel-plugin
 
 ## Architecture
 
-The codebase is organized into focused modules for maintainability:
+The codebase is organized into focused modules for maintainability and clarity:
 
-### Core Modules
-- **transform**: Main JSX transformation logic and AST traversal
+### Core Transformation
+- **transform**: Modern JSX transformation using declarative $bind API
+  - Produces clean, intuitive output with `$template`, `$clone`, and `$bind`
+  - Path-based element access for predictability
+  - Concise code generation with helper functions
+- **compat2**: Babel-compatible transformation (legacy format)
+  - Maintains full compatibility with babel-plugin-jsx-dom-expressions
+  - Used for existing Solid.js projects
 - **template**: Template string generation and dynamic slot tracking
-- **codegen**: Code generation utilities for runtime calls
-- **optimizer**: Template optimization and deduplication
+  - Converts JSX to HTML templates with dynamic markers
+- **utils**: Shared utilities for element/event detection
+
+### Optimization (src/opt)
+All optimization and minification code is separated into the `opt` module:
+- **optimizer**: Template deduplication and static analysis
+- **minimizer**: HTML template minimization and whitespace handling  
+- **evaluator**: Static expression evaluation for compile-time optimization
+
+This separation keeps the core transformation logic focused on correctness and maintainability,
+while optimization features can be independently developed and tested.
 
 ### Compatibility Layer
 - **compat**: Ensures compatibility with babel-plugin-jsx-dom-expressions
@@ -285,7 +326,10 @@ The codebase is organized into focused modules for maintainability:
   - Variable naming conventions (template/element variable names)
   - Babel-specific transformation behaviors
 
-This separation keeps the core transformation logic clean while maintaining full compatibility with the original babel plugin for fixture tests.
+## Choosing a Transformer
+
+- Use **`DomExpressions`** (from `transform`) for new projects wanting modern, readable output
+- Use **`DomExpressionsCompat2`** (from `compat2`) for babel-plugin-jsx-dom-expressions compatibility
 
 ## Performance
 
