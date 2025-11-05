@@ -46,7 +46,7 @@
 use oxc_ast::ast::*;
 use std::fmt::Write;
 
-use crate::static_evaluator::{evaluate_expression, EvaluatedValue};
+use crate::opt::evaluator::{evaluate_expression, EvaluatedValue};
 use crate::utils::{
     get_event_name, get_prefix_event_name, get_prefixed_name, is_attr_attribute, is_bool_attribute,
     is_class_list_binding, is_class_name_binding, is_event_handler, is_on_capture_event,
@@ -139,7 +139,7 @@ pub fn build_template_with_options(
     // SSR needs complete HTML with all closing tags and proper quoting
     if let Some(opts) = options {
         if opts.generate == GenerateMode::Dom {
-            template.html = crate::template_minimizer::minimize_template(&template.html, opts);
+            template.html = crate::opt::minimizer::minimize_template(&template.html, opts);
         } else {
             // SSR mode: unescape braces that were escaped for template literals
             // Template literals need \{ but string literals don't

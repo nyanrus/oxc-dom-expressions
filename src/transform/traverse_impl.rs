@@ -7,7 +7,7 @@ use oxc_span::{Atom, SPAN};
 use oxc_traverse::{Traverse, TraverseCtx};
 
 use crate::template::build_template_with_options;
-use crate::template_minimizer::minimize_template;
+use crate::opt::minimizer::minimize_template;
 
 use super::DomExpressions;
 

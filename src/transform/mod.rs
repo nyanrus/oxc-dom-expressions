@@ -6,7 +6,7 @@
 use oxc_allocator::Allocator;
 use std::collections::HashMap;
 
-use crate::optimizer::{TemplateOptimizer, TemplateStats};
+use crate::opt::{TemplateOptimizer, TemplateStats};
 use crate::options::DomExpressionsOptions;
 use crate::template::Template;
 
