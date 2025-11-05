@@ -230,8 +230,8 @@ impl<'a> DomExpressions<'a> {
                                         element_var,
                                         event_name,
                                         handler_expr,
-                                        true,
-                                        true,
+                                        /* is_delegated */ true,
+                                        /* lowercase_event */ true,
                                     ) {
                                         stmts.push(stmt);
                                     }
@@ -252,8 +252,8 @@ impl<'a> DomExpressions<'a> {
                                         element_var,
                                         event_name,
                                         handler_expr,
-                                        false,
-                                        true,
+                                        /* is_delegated */ false,
+                                        /* lowercase_event */ true,
                                     ) {
                                         stmts.push(stmt);
                                     }
@@ -273,8 +273,8 @@ impl<'a> DomExpressions<'a> {
                             element_var,
                             event_name,
                             &expressions[expr_index],
-                            false,
-                            false,
+                            /* is_delegated */ false,
+                            /* lowercase_event */ false,
                         ) {
                             stmts.push(stmt);
                         }
