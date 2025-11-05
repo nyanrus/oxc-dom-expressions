@@ -98,6 +98,7 @@
 //! - [`template_minimizer`]: Template minimization and formatting
 
 pub mod compat;
+pub mod compat2;
 pub mod html_subset_parser;
 pub mod optimizer;
 mod options;
@@ -110,6 +111,7 @@ pub mod utils;
 pub use optimizer::{Optimization, OptimizationKind, TemplateOptimizer, TemplateStats};
 pub use options::{DomExpressionsOptions, GenerateMode};
 pub use transform::DomExpressions;
+pub use compat2::DomExpressionsCompat2;
 
 #[cfg(test)]
 mod tests;

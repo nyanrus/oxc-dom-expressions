@@ -13,9 +13,9 @@ use oxc_span::SPAN;
 
 use crate::utils::is_component;
 
-use super::DomExpressions;
+use super::DomExpressionsCompat2;
 
-impl<'a> DomExpressions<'a> {
+impl<'a> DomExpressionsCompat2<'a> {
     pub(super) fn transform_component(
         &mut self,
         jsx_elem: Box<'a, JSXElement<'a>>,

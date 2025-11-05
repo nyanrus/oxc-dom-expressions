@@ -1,79 +1,71 @@
-//! Main transformer for DOM expressions
+//! Modern transformer for DOM expressions
 //!
-//! This module implements the core JSX to DOM transformation logic for oxc-dom-expressions.
-//! It transforms JSX syntax into optimized DOM manipulation code using a template-based approach.
+//! This module implements a modern, declarative JSX to DOM transformation.
+//! Instead of imperative DOM manipulation, it uses a declarative binding API
+//! that is more readable and maintainable.
 //!
-//! # AST-Based Code Generation
+//! # Output Format
 //!
-//! This transformer follows Oxc's recommended practices for AST transformation:
+//! The modern format uses three main runtime functions:
 //!
-//! ## Core Principles
+//! - **$template(html)**: Parses HTML template string once at module scope
+//! - **$clone(template)**: Clones the parsed template for each instance
+//! - **$bind(root, path, bindings)**: Declaratively binds properties/events to element at path
 //!
-//! - **Manual AST Construction**: All code is generated using `AstBuilder` through the allocator
-//! - **No String Manipulation**: Code is never generated via string concatenation or formatting
-//! - **Type Safety**: The AST API ensures type-safe and correct code generation
-//! - **Single Pass**: All transformations happen in one traversal for maximum performance
+//! ## Example Output
 //!
-//! ## Code Injection Patterns
+//! ```javascript
+//! import { $template, $clone, $bind } from "solid-runtime/polyfill";
 //!
-//! ### 1. Node Replacement
-//! In `exit_*` methods, JSX nodes are replaced with generated AST nodes:
-//! ```rust,ignore
-//! fn exit_expression(&mut self, expr: &mut Expression<'a>, ctx: &mut TraverseCtx<'a>) {
-//!     if let Expression::JSXElement(jsx_elem) = expr {
-//!         *expr = self.transform_jsx_element(jsx_elem, ctx);
-//!     }
-//! }
+//! const _tmpl$ = $template(`<div id="main"><h1 class="base"><a href="/">Welcome</a></h1></div>`);
+//!
+//! const template = (() => {
+//!   const _root$ = $clone(_tmpl$);
+//!   
+//!   $bind(_root$, [0], {
+//!     spread: [() => results],
+//!     classList: { selected: () => unknown },
+//!     style: { color: () => color }
+//!   });
+//!   
+//!   $bind(_root$, [0, 0], {
+//!     id: () => id,
+//!     title: () => welcoming(),
+//!     style: { "background-color": () => color(), "margin-right": "40px" },
+//!     classList: { dynamic: () => dynamic(), selected: () => selected }
+//!   });
+//!   
+//!   $bind(_root$, [0, 0, 0], {
+//!     ref: (el) => link = el,
+//!     classList: { "ccc ddd": true }
+//!   });
+//!   
+//!   return _root$;
+//! })();
 //! ```
 //!
-//! ### 2. Statement Insertion
-//! New statements are created and inserted into blocks:
-//! ```rust,ignore
-//! let insert_stmt = self.create_insert_call(element, expression);
-//! statements.push(insert_stmt);
-//! ```
+//! # Path System
 //!
-//! ## Example AST Construction
+//! Elements are referenced by their child index path from the root:
+//! - `[0]`: First child of root
+//! - `[0, 0]`: First child of first child
+//! - `[0, 0, 0]`: First child's first child's first child
 //!
-//! All AST nodes are constructed using the `AstBuilder` API:
-//! ```rust,ignore
-//! // Creating a call expression: _$insert(element, value)
-//! let call_expr = CallExpression {
-//!     span: SPAN,
-//!     callee: Expression::Identifier(Box::new_in(
-//!         IdentifierReference {
-//!             span: SPAN,
-//!             name: Atom::from("_$insert"),
-//!             reference_id: None.into(),
-//!         },
-//!         self.allocator,
-//!     )),
-//!     arguments: args,
-//!     optional: false,
-//!     type_arguments: None,
-//!     pure: false,
-//! };
-//! ```
+//! # Binding Options
 //!
-//! # Module Organization
-//!
-//! The transform module is split into several sub-modules for better organization:
-//!
-//! - **mod.rs** (this file) - Core struct, state management, and public API
-//! - **events.rs** - Event handling transformations (delegation, listeners, etc.)
-//! - **attributes.rs** - Attribute transformations (style, class, etc.)
-//! - **templates.rs** - Template and IIFE generation
-//! - **components.rs** - Component and fragment transformations  
-//! - **codegen.rs** - AST-based code generation helpers (imports, declarations, etc.)
-//! - **traverse_impl.rs** - Traverse trait implementation
-//!
-//! # Transformation Flow
-//!
-//! 1. **Parse**: JSX is parsed into an AST by the oxc parser
-//! 2. **Traverse**: The transformer traverses the AST bottom-up
-//! 3. **Template Building**: JSX elements are converted to HTML templates with dynamic slots
-//! 4. **AST Generation**: Generate runtime calls using AstBuilder for dynamic content
-//! 5. **Output**: Emit optimized JavaScript with template literals and runtime library calls
+//! The bindings object passed to `$bind` supports:
+//! - **ref**: Element reference callback or variable assignment
+//! - **spread**: Array of spread expressions to apply
+//! - **classList**: Object mapping class names to boolean conditions
+//! - **style**: Object mapping style properties to values (static or reactive)
+//! - **textContent**: Text content (for textContent attribute)
+//! - **innerHTML**: HTML content (for innerHTML attribute)
+//! - **on:eventName**: Event handlers
+//! - **attr:name**: Static attributes set via setAttribute
+//! - **prop:name**: Property assignments
+//! - **bool:name**: Boolean attributes
+//! - **use:directive**: Custom directives
+//! - Any other key: Regular attributes (reactive if value is a function)
 
 use oxc_allocator::Allocator;
 use std::collections::{HashMap, HashSet};
@@ -82,15 +74,12 @@ use crate::optimizer::{TemplateOptimizer, TemplateStats};
 use crate::options::DomExpressionsOptions;
 use crate::template::Template;
 
-// Sub-modules containing impl blocks for DomExpressions
-mod attributes;
+// Sub-modules
+mod bindings;
 mod codegen;
-mod components;
-mod events;
-mod templates;
 mod traverse_impl;
 
-/// The main DOM expressions transformer
+/// The modern DOM expressions transformer
 pub struct DomExpressions<'a> {
     pub(super) allocator: &'a Allocator,
     pub(super) options: DomExpressionsOptions,
@@ -100,20 +89,12 @@ pub struct DomExpressions<'a> {
     pub(super) template_map: HashMap<String, String>,
     /// Counter for generating unique template variable names
     pub(super) template_counter: usize,
-    /// Counter for generating unique element variable names
-    pub(super) element_counter: usize,
-    /// Whether we've generated the first root element (for _el$ vs _el$N)
-    pub(super) first_root_generated: bool,
-    /// List of required imports (preserves insertion order)
-    pub(super) required_imports: Vec<String>,
-    /// Set of events that need delegation
-    pub(super) delegated_events: HashSet<String>,
     /// Optimizer for template analysis
     pub(super) optimizer: TemplateOptimizer,
 }
 
 impl<'a> DomExpressions<'a> {
-    /// Create a new DOM expressions transformer
+    /// Create a new modern DOM expressions transformer
     pub fn new(allocator: &'a Allocator, options: DomExpressionsOptions) -> Self {
         Self {
             allocator,
@@ -121,10 +102,6 @@ impl<'a> DomExpressions<'a> {
             templates: Vec::new(),
             template_map: HashMap::new(),
             template_counter: 0,
-            element_counter: 0, // Start at 0
-            first_root_generated: false,
-            required_imports: Vec::new(),
-            delegated_events: HashSet::new(),
             optimizer: TemplateOptimizer::new(),
         }
     }
@@ -146,9 +123,12 @@ impl<'a> DomExpressions<'a> {
 
     /// Generate a unique template variable name
     pub(super) fn generate_template_var(&mut self) -> String {
-        use crate::compat::template_var_name;
         self.template_counter += 1;
-        template_var_name(self.template_counter)
+        if self.template_counter == 1 {
+            "_tmpl$".to_string()
+        } else {
+            format!("_tmpl${}", self.template_counter)
+        }
     }
 
     /// Get or create a template variable for given HTML
@@ -159,38 +139,6 @@ impl<'a> DomExpressions<'a> {
             let var = self.generate_template_var();
             self.template_map.insert(html.to_string(), var.clone());
             var
-        }
-    }
-
-    /// Add a required import (preserves insertion order)
-    pub(super) fn add_import(&mut self, name: &str) {
-        if !self.required_imports.contains(&name.to_string()) {
-            self.required_imports.push(name.to_string());
-        }
-    }
-
-    /// Add an event that needs delegation
-    pub(super) fn add_delegated_event(&mut self, event: &str) {
-        // Events should be normalized to lowercase for delegation
-        let lowercase_event = event.to_lowercase();
-        self.delegated_events.insert(lowercase_event);
-    }
-
-    /// Generate a unique element variable name
-    pub(super) fn generate_element_var(&mut self) -> String {
-        use crate::compat::element_var_name;
-        self.element_counter += 1;
-        element_var_name(self.element_counter)
-    }
-
-    /// Generate root element variable name
-    /// First root in file is "_el$", subsequent are numbered
-    pub(super) fn generate_root_element_var(&mut self) -> String {
-        if !self.first_root_generated {
-            self.first_root_generated = true;
-            "_el$".to_string()
-        } else {
-            self.generate_element_var()
         }
     }
 }
