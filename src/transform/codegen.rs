@@ -24,6 +24,20 @@ use crate::template::{SlotType, Template};
 use super::DomExpressions;
 
 impl<'a> DomExpressions<'a> {
+    /// Helper to get the element variable for a slot based on its path
+    fn element_var_for_slot<'b>(
+        &self,
+        slot_path: &[String],
+        root_var: &'b str,
+        path_to_var: &'b std::collections::HashMap<Vec<String>, String>,
+    ) -> &'b str {
+        if slot_path.is_empty() {
+            root_var
+        } else {
+            path_to_var.get(slot_path).map(|s| s.as_str()).unwrap_or(root_var)
+        }
+    }
+
     pub(super) fn create_runtime_calls_from_expressions(
         &mut self,
         expressions: &[Expression<'a>],
@@ -32,19 +46,14 @@ impl<'a> DomExpressions<'a> {
         path_to_var: &std::collections::HashMap<Vec<String>, String>,
     ) -> OxcVec<'a, Statement<'a>> {
         let mut stmts = OxcVec::new_in(self.allocator);
-
-        // Track which expression we're at
         let mut expr_index = 0;
 
-        // For each dynamic slot, generate the appropriate runtime call
         for slot in &template.dynamic_slots {
             match &slot.slot_type {
                 SlotType::TextContent => {
-                    // Generate insert call
                     self.add_import("insert");
 
                     if expr_index < expressions.len() {
-                        // Determine marker variable (3rd argument to insert)
                         let marker_var = if let Some(marker_path) = &slot.marker_path {
                             path_to_var.get(marker_path).map(|s| s.as_str())
                         } else {
@@ -62,20 +71,11 @@ impl<'a> DomExpressions<'a> {
                     }
                 }
                 SlotType::Attribute(attr_name) => {
-                    // Generate setAttribute call wrapped in effect
                     self.add_import("setAttribute");
                     self.add_import("effect");
 
                     if expr_index < expressions.len() {
-                        // Get element variable for this slot's path
-                        let element_var = if slot.path.is_empty() {
-                            root_var
-                        } else {
-                            path_to_var
-                                .get(&slot.path)
-                                .map(|s| s.as_str())
-                                .unwrap_or(root_var)
-                        };
+                        let element_var = self.element_var_for_slot(&slot.path, root_var, path_to_var);
 
                         if let Some(attr_stmt) = self.create_set_attribute_call(
                             element_var,
@@ -88,20 +88,11 @@ impl<'a> DomExpressions<'a> {
                     }
                 }
                 SlotType::BoolAttribute(attr_name) => {
-                    // Generate setBoolAttribute call
                     self.add_import("setBoolAttribute");
-                    // Also need effect for reactive expressions
                     self.add_import("effect");
 
                     if expr_index < expressions.len() {
-                        let element_var = if slot.path.is_empty() {
-                            root_var
-                        } else {
-                            path_to_var
-                                .get(&slot.path)
-                                .map(|s| s.as_str())
-                                .unwrap_or(root_var)
-                        };
+                        let element_var = self.element_var_for_slot(&slot.path, root_var, path_to_var);
 
                         if let Some(stmt) = self.create_set_bool_attribute_call(
                             element_var,
@@ -114,16 +105,8 @@ impl<'a> DomExpressions<'a> {
                     }
                 }
                 SlotType::PropAttribute(attr_name) => {
-                    // Generate direct property assignment: element.propName = value;
                     if expr_index < expressions.len() {
-                        let element_var = if slot.path.is_empty() {
-                            root_var
-                        } else {
-                            path_to_var
-                                .get(&slot.path)
-                                .map(|s| s.as_str())
-                                .unwrap_or(root_var)
-                        };
+                        let element_var = self.element_var_for_slot(&slot.path, root_var, path_to_var);
 
                         if let Some(stmt) = self.create_property_assignment(
                             element_var,
@@ -136,18 +119,10 @@ impl<'a> DomExpressions<'a> {
                     }
                 }
                 SlotType::AttrAttribute(attr_name) => {
-                    // Generate setAttribute call (without effect wrapper for static values)
                     self.add_import("setAttribute");
 
                     if expr_index < expressions.len() {
-                        let element_var = if slot.path.is_empty() {
-                            root_var
-                        } else {
-                            path_to_var
-                                .get(&slot.path)
-                                .map(|s| s.as_str())
-                                .unwrap_or(root_var)
-                        };
+                        let element_var = self.element_var_for_slot(&slot.path, root_var, path_to_var);
 
                         if let Some(stmt) = self.create_static_set_attribute_call(
                             element_var,
@@ -160,29 +135,17 @@ impl<'a> DomExpressions<'a> {
                     }
                 }
                 SlotType::EventHandler(event_name) => {
-                    // Generate event handler - either delegated or direct addEventListener
                     if expr_index < expressions.len() {
-                        let element_var = if slot.path.is_empty() {
-                            root_var
-                        } else {
-                            path_to_var
-                                .get(&slot.path)
-                                .map(|s| s.as_str())
-                                .unwrap_or(root_var)
-                        };
+                        let element_var = self.element_var_for_slot(&slot.path, root_var, path_to_var);
 
-                        // Check if event should be delegated
                         use crate::utils::should_delegate_event;
                         let should_delegate =
                             self.options.delegate_events && should_delegate_event(event_name);
 
                         let handler_expr = &expressions[expr_index];
-
-                        // Check if handler is an array expression
                         let is_array = matches!(handler_expr, Expression::ArrayExpression(_));
 
                         if is_array {
-                            // Handle array form [handler] or [handler, data]
                             if let Expression::ArrayExpression(arr) = handler_expr {
                                 let handler = arr.elements.first().and_then(|e| match e {
                                     oxc_ast::ast::ArrayExpressionElement::SpreadElement(_) => None,
@@ -197,9 +160,7 @@ impl<'a> DomExpressions<'a> {
 
                                 if let Some(handler) = handler {
                                     if should_delegate {
-                                        // Delegated event with optional data
                                         if let Some(data) = data {
-                                            // Generate: el.$$event = handler; el.$$eventData = data;
                                             if let Some(stmt) = self.create_delegated_event_handler(
                                                 element_var,
                                                 event_name,
@@ -215,7 +176,6 @@ impl<'a> DomExpressions<'a> {
                                                 stmts.push(stmt);
                                             }
                                         } else {
-                                            // Just [handler] with no data - for arrays, use direct delegation even if resolvable
                                             if let Some(stmt) = self.create_delegated_event_handler(
                                                 element_var,
                                                 event_name,
@@ -225,9 +185,7 @@ impl<'a> DomExpressions<'a> {
                                             }
                                         }
                                     } else {
-                                        // Non-delegated event with optional data
                                         if let Some(data) = data {
-                                            // Generate: el.addEventListener("event", e => handler(data, e))
                                             let wrapper = self.create_event_wrapper(handler, data);
                                             if let Some(stmt) = self.create_add_event_listener(
                                                 element_var,
@@ -238,7 +196,6 @@ impl<'a> DomExpressions<'a> {
                                                 stmts.push(stmt);
                                             }
                                         } else {
-                                            // Just [handler] with no data - use direct addEventListener for arrays
                                             if let Some(stmt) = self.create_add_event_listener(
                                                 element_var,
                                                 event_name,
@@ -252,10 +209,6 @@ impl<'a> DomExpressions<'a> {
                                 }
                             }
                         } else {
-                            // Regular (non-array) handler
-                            // Conservative approach: only inline functions are considered resolvable
-                            // Identifiers need scope analysis to determine if they're functions,
-                            // so we treat them as non-resolvable and use the helper
                             let is_inline_function = matches!(
                                 handler_expr,
                                 Expression::ArrowFunctionExpression(_)
@@ -264,7 +217,6 @@ impl<'a> DomExpressions<'a> {
 
                             if should_delegate {
                                 if is_inline_function {
-                                    // Use direct delegation for inline functions
                                     if let Some(stmt) = self.create_delegated_event_handler(
                                         element_var,
                                         event_name,
@@ -273,22 +225,19 @@ impl<'a> DomExpressions<'a> {
                                         stmts.push(stmt);
                                     }
                                 } else {
-                                    // Use _$addEventListener helper for identifiers (can't determine if resolvable)
                                     self.add_import("addEventListener");
                                     if let Some(stmt) = self.create_add_event_listener_helper(
                                         element_var,
                                         event_name,
                                         handler_expr,
-                                        true, // delegated
-                                        true, // lowercase event name
+                                        /* is_delegated */ true,
+                                        /* lowercase_event */ true,
                                     ) {
                                         stmts.push(stmt);
                                     }
                                 }
                             } else {
-                                // Non-delegated handler
                                 if is_inline_function {
-                                    // Use direct addEventListener for inline functions
                                     if let Some(stmt) = self.create_add_event_listener(
                                         element_var,
                                         event_name,
@@ -298,14 +247,13 @@ impl<'a> DomExpressions<'a> {
                                         stmts.push(stmt);
                                     }
                                 } else {
-                                    // Use helper for identifiers
                                     self.add_import("addEventListener");
                                     if let Some(stmt) = self.create_add_event_listener_helper(
                                         element_var,
                                         event_name,
                                         handler_expr,
-                                        false, // not delegated
-                                        true,  // lowercase event name
+                                        /* is_delegated */ false,
+                                        /* lowercase_event */ true,
                                     ) {
                                         stmts.push(stmt);
                                     }
@@ -316,26 +264,17 @@ impl<'a> DomExpressions<'a> {
                     }
                 }
                 SlotType::OnEvent(event_name) => {
-                    // Generate on: prefix event - always use _$addEventListener helper
                     self.add_import("addEventListener");
 
                     if expr_index < expressions.len() {
-                        let element_var = if slot.path.is_empty() {
-                            root_var
-                        } else {
-                            path_to_var
-                                .get(&slot.path)
-                                .map(|s| s.as_str())
-                                .unwrap_or(root_var)
-                        };
+                        let element_var = self.element_var_for_slot(&slot.path, root_var, path_to_var);
 
-                        // Use the helper function for on: prefix events
                         if let Some(stmt) = self.create_add_event_listener_helper(
                             element_var,
                             event_name,
                             &expressions[expr_index],
-                            false, // not delegated
-                            false, // don't lowercase - preserve case for custom events
+                            /* is_delegated */ false,
+                            /* lowercase_event */ false,
                         ) {
                             stmts.push(stmt);
                         }
@@ -343,16 +282,8 @@ impl<'a> DomExpressions<'a> {
                     }
                 }
                 SlotType::OnCaptureEvent(event_name) => {
-                    // Generate oncapture: prefix event - addEventListener with capture
                     if expr_index < expressions.len() {
-                        let element_var = if slot.path.is_empty() {
-                            root_var
-                        } else {
-                            path_to_var
-                                .get(&slot.path)
-                                .map(|s| s.as_str())
-                                .unwrap_or(root_var)
-                        };
+                        let element_var = self.element_var_for_slot(&slot.path, root_var, path_to_var);
 
                         if let Some(stmt) = self.create_capture_event_listener(
                             element_var,
@@ -365,16 +296,8 @@ impl<'a> DomExpressions<'a> {
                     }
                 }
                 SlotType::UseDirective(directive_name) => {
-                    // Generate use directive call
                     if expr_index < expressions.len() {
-                        let element_var = if slot.path.is_empty() {
-                            root_var
-                        } else {
-                            path_to_var
-                                .get(&slot.path)
-                                .map(|s| s.as_str())
-                                .unwrap_or(root_var)
-                        };
+                        let element_var = self.element_var_for_slot(&slot.path, root_var, path_to_var);
 
                         if let Some(stmt) = self.create_use_directive_call(
                             element_var,
@@ -387,18 +310,10 @@ impl<'a> DomExpressions<'a> {
                     }
                 }
                 SlotType::ClassName(class_name) => {
-                    // Generate className call
                     self.add_import("className");
 
                     if expr_index < expressions.len() {
-                        let element_var = if slot.path.is_empty() {
-                            root_var
-                        } else {
-                            path_to_var
-                                .get(&slot.path)
-                                .map(|s| s.as_str())
-                                .unwrap_or(root_var)
-                        };
+                        let element_var = self.element_var_for_slot(&slot.path, root_var, path_to_var);
 
                         if let Some(stmt) = self.create_class_name_call(
                             element_var,
@@ -411,19 +326,11 @@ impl<'a> DomExpressions<'a> {
                     }
                 }
                 SlotType::StyleProperty(property_name) => {
-                    // Generate setStyleProperty call
                     self.add_import("setStyleProperty");
                     self.add_import("effect");
 
                     if expr_index < expressions.len() {
-                        let element_var = if slot.path.is_empty() {
-                            root_var
-                        } else {
-                            path_to_var
-                                .get(&slot.path)
-                                .map(|s| s.as_str())
-                                .unwrap_or(root_var)
-                        };
+                        let element_var = self.element_var_for_slot(&slot.path, root_var, path_to_var);
 
                         if let Some(stmt) = self.create_set_style_property_call(
                             element_var,
@@ -436,18 +343,10 @@ impl<'a> DomExpressions<'a> {
                     }
                 }
                 SlotType::Ref => {
-                    // Generate ref binding: _$use(ref, element) or conditional assignment
                     self.add_import("use");
 
                     if expr_index < expressions.len() {
-                        let element_var = if slot.path.is_empty() {
-                            root_var
-                        } else {
-                            path_to_var
-                                .get(&slot.path)
-                                .map(|s| s.as_str())
-                                .unwrap_or(root_var)
-                        };
+                        let element_var = self.element_var_for_slot(&slot.path, root_var, path_to_var);
 
                         if let Some(stmt) =
                             self.create_ref_call(element_var, &expressions[expr_index])
@@ -458,18 +357,10 @@ impl<'a> DomExpressions<'a> {
                     }
                 }
                 SlotType::ClassList => {
-                    // Generate classList call: _$classList(element, {...})
                     self.add_import("classList");
 
                     if expr_index < expressions.len() {
-                        let element_var = if slot.path.is_empty() {
-                            root_var
-                        } else {
-                            path_to_var
-                                .get(&slot.path)
-                                .map(|s| s.as_str())
-                                .unwrap_or(root_var)
-                        };
+                        let element_var = self.element_var_for_slot(&slot.path, root_var, path_to_var);
 
                         if let Some(stmt) =
                             self.create_class_list_call(element_var, &expressions[expr_index])
@@ -480,18 +371,10 @@ impl<'a> DomExpressions<'a> {
                     }
                 }
                 SlotType::StyleObject => {
-                    // Generate style object call: _$style(element, {...})
                     self.add_import("style");
 
                     if expr_index < expressions.len() {
-                        let element_var = if slot.path.is_empty() {
-                            root_var
-                        } else {
-                            path_to_var
-                                .get(&slot.path)
-                                .map(|s| s.as_str())
-                                .unwrap_or(root_var)
-                        };
+                        let element_var = self.element_var_for_slot(&slot.path, root_var, path_to_var);
 
                         if let Some(stmt) =
                             self.create_style_object_call(element_var, &expressions[expr_index])
@@ -502,18 +385,10 @@ impl<'a> DomExpressions<'a> {
                     }
                 }
                 SlotType::Spread => {
-                    // Spread attributes - generate _$spread call
                     self.add_import("spread");
 
                     if expr_index < expressions.len() {
-                        let element_var = if slot.path.is_empty() {
-                            root_var
-                        } else {
-                            path_to_var
-                                .get(&slot.path)
-                                .map(|s| s.as_str())
-                                .unwrap_or(root_var)
-                        };
+                        let element_var = self.element_var_for_slot(&slot.path, root_var, path_to_var);
 
                         if let Some(stmt) =
                             self.create_spread_call(element_var, &expressions[expr_index])
@@ -529,7 +404,7 @@ impl<'a> DomExpressions<'a> {
         stmts
     }
 
-    /// Extract all dynamic expressions from JSX element in order (cloning them)
+    /// Extract all dynamic expressions from JSX element in order
     pub(super) fn extract_expressions_from_jsx(
         &self,
         jsx_elem: &JSXElement<'a>,
@@ -537,18 +412,14 @@ impl<'a> DomExpressions<'a> {
     ) {
         use oxc_allocator::CloneIn;
 
-        // First extract expressions from attributes
         for attr in &jsx_elem.opening_element.attributes {
             if let JSXAttributeItem::Attribute(attr) = attr {
                 if let Some(JSXAttributeValue::ExpressionContainer(container)) = &attr.value {
                     match &container.expression {
                         JSXExpression::StringLiteral(_)
                         | JSXExpression::NumericLiteral(_)
-                        | JSXExpression::EmptyExpression(_) => {
-                            // Static or empty - skip
-                        }
+                        | JSXExpression::EmptyExpression(_) => {}
                         expr => {
-                            // Dynamic attribute expression
                             if let Some(expr_ref) = expr.as_expression() {
                                 expressions.push(expr_ref.clone_in(self.allocator));
                             }
@@ -558,13 +429,12 @@ impl<'a> DomExpressions<'a> {
             }
         }
 
-        // Then walk through children and extract expressions
         for child in &jsx_elem.children {
             self.extract_expressions_from_child(child, expressions);
         }
     }
 
-    /// Extract expressions from a JSX child (cloning them)
+    /// Extract expressions from a JSX child
     pub(super) fn extract_expressions_from_child(
         &self,
         child: &JSXChild<'a>,
@@ -574,32 +444,21 @@ impl<'a> DomExpressions<'a> {
 
         match child {
             JSXChild::Element(elem) => {
-                // Recursively extract from nested elements
                 self.extract_expressions_from_jsx(elem, expressions);
             }
             JSXChild::ExpressionContainer(container) => {
                 match &container.expression {
                     JSXExpression::StringLiteral(_)
                     | JSXExpression::NumericLiteral(_)
-                    | JSXExpression::EmptyExpression(_) => {
-                        // Static or empty - skip (already in template)
-                    }
-                    // All other JSXExpression variants are dynamic expressions
-                    // JSXExpression inherits from Expression via macro
+                    | JSXExpression::EmptyExpression(_) => {}
                     expr => {
-                        // Convert JSXExpression to Expression and clone it
                         if let Some(expr_ref) = expr.as_expression() {
                             expressions.push(expr_ref.clone_in(self.allocator));
                         }
                     }
                 }
             }
-            JSXChild::Text(_) => {
-                // Static text - skip
-            }
-            JSXChild::Fragment(_) | JSXChild::Spread(_) => {
-                // Not implemented yet
-            }
+            JSXChild::Text(_) | JSXChild::Fragment(_) | JSXChild::Spread(_) => {}
         }
     }
 
@@ -625,18 +484,16 @@ impl<'a> DomExpressions<'a> {
         ))
     }
 
-    /// Create multiple import statements (one per import)
+    /// Create import statements for all required runtime functions
     pub(super) fn create_import_statements(&self) -> Vec<Statement<'a>> {
         use oxc_ast::ast::*;
 
         let mut statements = Vec::new();
 
-        // Sort imports by priority using the compat module
         let mut sorted_imports: Vec<_> = self.required_imports.iter().collect();
         sorted_imports.sort_by_key(|name| get_import_priority(name));
 
         for import_name in sorted_imports {
-            // Create local binding name (e.g., _$template for template)
             let local_name = format!("_${}", import_name);
             let local = BindingIdentifier {
                 span: SPAN,
@@ -644,13 +501,11 @@ impl<'a> DomExpressions<'a> {
                 symbol_id: None.into(),
             };
 
-            // Create imported name
             let imported = ModuleExportName::IdentifierName(IdentifierName {
                 span: SPAN,
                 name: Atom::from(self.allocator.alloc_str(import_name)),
             });
 
-            // Create import specifier
             let specifier = ImportDeclarationSpecifier::ImportSpecifier(Box::new_in(
                 ImportSpecifier {
                     span: SPAN,
@@ -664,7 +519,6 @@ impl<'a> DomExpressions<'a> {
             let mut specifiers = OxcVec::new_in(self.allocator);
             specifiers.push(specifier);
 
-            // Create source string
             let source = StringLiteral {
                 span: SPAN,
                 value: Atom::from(self.allocator.alloc_str(&self.options.module_name)),
@@ -672,7 +526,6 @@ impl<'a> DomExpressions<'a> {
                 lone_surrogates: false,
             };
 
-            // Create import declaration
             let import_decl = ImportDeclaration {
                 span: SPAN,
                 specifiers: Some(specifiers),
@@ -682,7 +535,6 @@ impl<'a> DomExpressions<'a> {
                 phase: None,
             };
 
-            // Wrap in ModuleDeclaration and Statement
             let module_decl =
                 ModuleDeclaration::ImportDeclaration(Box::new_in(import_decl, self.allocator));
 

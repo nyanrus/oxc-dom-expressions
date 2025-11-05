@@ -15,6 +15,7 @@ use crate::template::{SlotType, Template};
 use super::DomExpressions;
 
 impl<'a> DomExpressions<'a> {
+    /// Create a template call expression
     pub(super) fn create_template_call(
         &self,
         template_var: &'a str,
@@ -25,15 +26,12 @@ impl<'a> DomExpressions<'a> {
         let is_ssr = self.options.generate == GenerateMode::Ssr;
 
         if is_ssr {
-            // SSR mode: _$ssr(_tmpl$)
-            // Create identifier for the _$ssr function
             let ssr_fn = IdentifierReference {
                 span: SPAN,
                 name: oxc_span::Atom::from("_$ssr"),
                 reference_id: None.into(),
             };
 
-            // Create identifier for the template variable argument
             let template_ident = IdentifierReference {
                 span: SPAN,
                 name: oxc_span::Atom::from(template_var),
@@ -57,7 +55,6 @@ impl<'a> DomExpressions<'a> {
 
             Box::new_in(call_expr, self.allocator)
         } else {
-            // DOM mode: _tmpl$()
             let callee_ident = IdentifierReference {
                 span: SPAN,
                 name: oxc_span::Atom::from(template_var),
@@ -87,17 +84,12 @@ impl<'a> DomExpressions<'a> {
     ) -> Box<'a, CallExpression<'a>> {
         use oxc_ast::ast::*;
 
-        // Generate IIFE: (() => { ... })()
-        // 1. Create statements for the function body
         let mut body_stmts = OxcVec::new_in(self.allocator);
 
-        // 2. Create template cloning statement and element references
-        // var _el$ = _tmpl$(), _el$2 = _el$.firstChild, ...
         let (root_var, elem_decls, path_to_var) =
             self.create_element_declarations(template, template_var);
         body_stmts.push(elem_decls);
 
-        // 3. Create runtime calls for dynamic content
         let runtime_stmts = self.create_runtime_calls_from_expressions(
             &expressions,
             template,
@@ -106,18 +98,15 @@ impl<'a> DomExpressions<'a> {
         );
         body_stmts.extend(runtime_stmts);
 
-        // 4. Create return statement
         let return_stmt = self.create_return_statement(&root_var);
         body_stmts.push(return_stmt);
 
-        // Create function body
         let func_body = FunctionBody {
             span: SPAN,
             directives: OxcVec::new_in(self.allocator),
             statements: body_stmts,
         };
 
-        // Create arrow function
         let arrow_fn = ArrowFunctionExpression {
             span: SPAN,
             expression: false,
@@ -139,7 +128,6 @@ impl<'a> DomExpressions<'a> {
             pife: false,
         };
 
-        // Create call expression: (() => { ... })()
         let call_expr = CallExpression {
             span: SPAN,
             callee: Expression::ArrowFunctionExpression(Box::new_in(arrow_fn, self.allocator)),

@@ -14,7 +14,7 @@ use oxc_span::SPAN;
 use super::DomExpressions;
 
 impl<'a> DomExpressions<'a> {
-    /// Create a delegated event handler assignment: element.$$eventName = handler;
+    /// Create a delegated event handler assignment
     pub(super) fn create_delegated_event_handler(
         &self,
         element_var: &str,
@@ -24,10 +24,8 @@ impl<'a> DomExpressions<'a> {
         use oxc_allocator::CloneIn;
         use oxc_ast::ast::*;
 
-        // Normalize event name to lowercase for delegation
         let normalized_event = event_name.to_lowercase();
 
-        // Create: element.$$eventName = handler;
         let element_ref = IdentifierReference {
             span: SPAN,
             name: Atom::from(self.allocator.alloc_str(element_var)),
@@ -68,7 +66,7 @@ impl<'a> DomExpressions<'a> {
         )))
     }
 
-    /// Create an addEventListener call: element.addEventListener(eventName, handler);
+    /// Create an addEventListener call
     pub(super) fn create_add_event_listener(
         &self,
         element_var: &str,
@@ -79,7 +77,6 @@ impl<'a> DomExpressions<'a> {
         use oxc_allocator::CloneIn;
         use oxc_ast::ast::*;
 
-        // Create: element.addEventListener("eventName", handler);
         let element_ref = IdentifierReference {
             span: SPAN,
             name: Atom::from(self.allocator.alloc_str(element_var)),
@@ -98,7 +95,6 @@ impl<'a> DomExpressions<'a> {
 
         let mut args = OxcVec::new_in(self.allocator);
 
-        // First argument: event name as lowercase string
         let lowercase_event = event_name.to_lowercase();
         args.push(Argument::StringLiteral(Box::new_in(
             StringLiteral {
@@ -110,7 +106,6 @@ impl<'a> DomExpressions<'a> {
             self.allocator,
         )));
 
-        // Second argument: handler expression
         args.push(Argument::from(handler_expr.clone_in(self.allocator)));
 
         let call = CallExpression {
@@ -134,7 +129,7 @@ impl<'a> DomExpressions<'a> {
         )))
     }
 
-    /// Create a capture phase event listener: element.addEventListener(eventName, handler, true);
+    /// Create a capture phase event listener
     pub(super) fn create_capture_event_listener(
         &self,
         element_var: &str,
@@ -144,7 +139,6 @@ impl<'a> DomExpressions<'a> {
         use oxc_allocator::CloneIn;
         use oxc_ast::ast::*;
 
-        // Create: element.addEventListener("eventName", handler, true);
         let element_ref = IdentifierReference {
             span: SPAN,
             name: Atom::from(self.allocator.alloc_str(element_var)),

@@ -23,10 +23,8 @@ impl<'a> DomExpressions<'a> {
         use oxc_allocator::CloneIn;
         use oxc_ast::ast::*;
 
-        // Check if the expression is a call expression (reactive)
         let is_reactive = matches!(value_expr, Expression::CallExpression(_));
 
-        // Create: _$setStyleProperty(element, "property", value)
         let set_style_prop_fn = IdentifierReference {
             span: SPAN,
             name: Atom::from("_$setStyleProperty"),
@@ -35,7 +33,6 @@ impl<'a> DomExpressions<'a> {
 
         let mut set_style_prop_args = OxcVec::new_in(self.allocator);
 
-        // First argument: element reference
         set_style_prop_args.push(Argument::Identifier(Box::new_in(
             IdentifierReference {
                 span: SPAN,
@@ -45,7 +42,6 @@ impl<'a> DomExpressions<'a> {
             self.allocator,
         )));
 
-        // Second argument: property name as string literal
         set_style_prop_args.push(Argument::StringLiteral(Box::new_in(
             StringLiteral {
                 span: SPAN,
@@ -56,7 +52,6 @@ impl<'a> DomExpressions<'a> {
             self.allocator,
         )));
 
-        // Third argument: value expression
         set_style_prop_args.push(Argument::from(value_expr.clone_in(self.allocator)));
 
         let set_style_prop_call = CallExpression {
@@ -69,7 +64,6 @@ impl<'a> DomExpressions<'a> {
         };
 
         if is_reactive {
-            // Wrap in _$effect for reactive expressions
             let arrow_body = FunctionBody {
                 span: SPAN,
                 directives: OxcVec::new_in(self.allocator),
