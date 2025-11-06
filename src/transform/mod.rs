@@ -1,7 +1,7 @@
 //! Modern transformer for DOM expressions
 //!
 //! This module implements a modern, declarative JSX to DOM transformation using
-//! $template, $clone, and $bind runtime functions from solid-runtime/polyfill.
+//! $template, $clone, and $bind runtime functions that wrap the original solid-js/web API.
 
 use oxc_allocator::Allocator;
 use std::collections::HashMap;
@@ -13,6 +13,7 @@ use crate::template::Template;
 
 // Sub-modules
 mod codegen;
+mod helper;
 mod traverse_impl;
 
 /// The modern DOM expressions transformer
@@ -28,6 +29,8 @@ pub struct DomExpressions<'a> {
     /// Optimizer for template analysis
     #[cfg(feature = "opt")]
     pub(super) optimizer: TemplateOptimizer,
+    /// Whether helper functions have been injected
+    pub(super) helper_injected: bool,
 }
 
 impl<'a> DomExpressions<'a> {
@@ -41,6 +44,7 @@ impl<'a> DomExpressions<'a> {
             template_counter: 0,
             #[cfg(feature = "opt")]
             optimizer: TemplateOptimizer::new(),
+            helper_injected: false,
         }
     }
 

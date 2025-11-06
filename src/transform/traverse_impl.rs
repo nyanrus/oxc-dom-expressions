@@ -21,12 +21,13 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
     }
 
     fn exit_program(&mut self, program: &mut Program<'a>, _ctx: &mut TraverseCtx<'a, ()>) {
-        // Inject imports and template declarations at the top of the program if any templates were created
-        if !self.templates.is_empty() {
+        // Inject helper and template declarations at the top of the program if any templates were created
+        if !self.templates.is_empty() && !self.helper_injected {
             let mut new_stmts = Vec::new();
             
-            // 1. Add import statement
-            new_stmts.push(self.create_modern_import_statement());
+            // 1. Add helper function statements (import + $template, $clone, $bind definitions)
+            let helper_stmts = self.create_helper_statements();
+            new_stmts.extend(helper_stmts);
 
             // 2. Add template variable declarations
             let template_decls = self.create_template_declarations();
@@ -42,6 +43,9 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
 
             // Replace program body
             program.body = OxcVec::from_iter_in(all_stmts, self.allocator);
+            
+            // Mark helper as injected
+            self.helper_injected = true;
         }
     }
 }

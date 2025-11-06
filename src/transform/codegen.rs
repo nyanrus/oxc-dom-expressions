@@ -28,53 +28,6 @@ impl<'a> DomExpressions<'a> {
         }
     }
 
-    /// Helper: Create an import specifier
-    fn import_spec(&self, name: &'a str) -> ImportDeclarationSpecifier<'a> {
-        ImportDeclarationSpecifier::ImportSpecifier(Box::new_in(
-            ImportSpecifier {
-                span: SPAN,
-                imported: ModuleExportName::IdentifierName(IdentifierName {
-                    span: SPAN,
-                    name: Atom::from(name),
-                }),
-                local: self.binding_ident(name),
-                import_kind: ImportOrExportKind::Value,
-            },
-            self.allocator,
-        ))
-    }
-
-    /// Create import statement: import { $template, $clone, $bind } from "solid-runtime/polyfill"
-    pub(super) fn create_modern_import_statement(&self) -> Statement<'a> {
-        let mut specifiers = OxcVec::new_in(self.allocator);
-        specifiers.push(self.import_spec(self.allocator.alloc_str("$template")));
-        specifiers.push(self.import_spec(self.allocator.alloc_str("$clone")));
-        specifiers.push(self.import_spec(self.allocator.alloc_str("$bind")));
-
-        let module_name = if self.options.module_name.contains("/web") {
-            self.allocator.alloc_str("solid-runtime/polyfill")
-        } else {
-            self.allocator.alloc_str(&self.options.module_name)
-        };
-
-        Statement::ImportDeclaration(Box::new_in(
-            ImportDeclaration {
-                span: SPAN,
-                specifiers: Some(specifiers),
-                source: StringLiteral {
-                    span: SPAN,
-                    value: Atom::from(module_name),
-                    raw: None,
-                    lone_surrogates: false,
-                },
-                with_clause: None,
-                import_kind: ImportOrExportKind::Value,
-                phase: None,
-            },
-            self.allocator,
-        ))
-    }
-
     /// Helper: Create a call expression
     fn call_expr(&self, callee_name: &'a str, args: OxcVec<'a, Argument<'a>>) -> Expression<'a> {
         Expression::CallExpression(Box::new_in(
@@ -228,5 +181,31 @@ impl<'a> DomExpressions<'a> {
             },
             self.allocator,
         ))
+    }
+
+    /// Create helper function statements by parsing the JavaScript helper code
+    /// Returns the parsed statements that define $template, $clone, and $bind
+    pub(super) fn create_helper_statements(&self) -> Vec<Statement<'a>> {
+        use super::helper::get_runtime_helper;
+        use oxc_parser::Parser;
+        use oxc_span::SourceType;
+        
+        // Get the helper code
+        let helper_code_owned = get_runtime_helper(&self.options.module_name);
+        
+        // Allocate the helper code in the allocator so it lives as long as 'a
+        let helper_code = self.allocator.alloc_str(&helper_code_owned);
+        
+        // Parse the helper code
+        let source_type = SourceType::default().with_module(true);
+        let ret = Parser::new(self.allocator, helper_code, source_type).parse();
+        
+        if ret.errors.is_empty() {
+            // Extract the statements from the parsed program
+            ret.program.body.into_iter().collect()
+        } else {
+            // If parsing fails, return empty vec (shouldn't happen with our known-good helper code)
+            Vec::new()
+        }
     }
 }
