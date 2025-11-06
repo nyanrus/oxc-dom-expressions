@@ -75,6 +75,7 @@ impl<'a> DomExpressions<'a> {
     }
 
     /// Create template declarations for all collected templates
+    /// Uses _$template directly from the runtime
     pub(super) fn create_template_declarations(&self) -> Vec<Statement<'a>> {
         self.template_map
             .iter()
@@ -91,7 +92,7 @@ impl<'a> DomExpressions<'a> {
                     lone_surrogates: false,
                 });
 
-                // Create $template(html) call
+                // Create _$template(html) call - use runtime function directly
                 let mut args = OxcVec::new_in(self.allocator);
                 args.push(Argument::TemplateLiteral(Box::new_in(
                     TemplateLiteral {
@@ -102,17 +103,18 @@ impl<'a> DomExpressions<'a> {
                     self.allocator,
                 )));
 
-                let template_call = self.call_expr(self.allocator.alloc_str("$template"), args);
+                let template_call = self.call_expr(self.allocator.alloc_str("_$template"), args);
                 self.const_decl(self.allocator.alloc_str(var_name.as_str()), template_call)
             })
             .collect()
     }
 
-    /// Create a $clone() call expression
+    /// Create a template clone call: tmpl()
+    /// The template function returns a cloneable element
     pub(super) fn create_clone_call(&self, template_var: &'a str) -> Expression<'a> {
-        let mut args = OxcVec::new_in(self.allocator);
-        args.push(Argument::Identifier(Box::new_in(self.ident(template_var), self.allocator)));
-        self.call_expr(self.allocator.alloc_str("$clone"), args)
+        // Just call the template: _tmpl$()
+        let args = OxcVec::new_in(self.allocator);
+        self.call_expr(template_var, args)
     }
 
     /// Create an IIFE: (() => { ...statements... return _root$; })()
@@ -184,29 +186,28 @@ impl<'a> DomExpressions<'a> {
     }
 
     /// Create helper function statements by parsing the JavaScript helper code
-    /// Returns the parsed statements that define $template, $clone, and $bind
+    /// Returns just the import statement - we use runtime functions directly
     pub(super) fn create_helper_statements(&self) -> Vec<Statement<'a>> {
-        use super::helper::get_runtime_helper;
+        use super::helper::get_runtime_imports;
         use oxc_parser::Parser;
         use oxc_span::SourceType;
         
-        // Get the helper code
-        let helper_code_owned = get_runtime_helper(&self.options.module_name);
+        // Get the import statement
+        let imports_code_owned = get_runtime_imports(&self.options.module_name);
         
-        // Allocate the helper code in the allocator so it lives as long as 'a
-        let helper_code = self.allocator.alloc_str(&helper_code_owned);
+        // Allocate the code in the allocator so it lives as long as 'a
+        let imports_code = self.allocator.alloc_str(&imports_code_owned);
         
-        // Parse the helper code
+        // Parse the imports
         let source_type = SourceType::default().with_module(true);
-        let ret = Parser::new(self.allocator, helper_code, source_type).parse();
+        let ret = Parser::new(self.allocator, imports_code, source_type).parse();
         
         if ret.errors.is_empty() {
             // Extract the statements from the parsed program
             ret.program.body.into_iter().collect()
         } else {
-            // This should never happen since we control the helper code
-            // But if it does, log the errors for debugging
-            eprintln!("ERROR: Failed to parse helper code. This is a bug in oxc-dom-expressions.");
+            // This should never happen since we control the import code
+            eprintln!("ERROR: Failed to parse imports. This is a bug in oxc-dom-expressions.");
             for error in &ret.errors {
                 eprintln!("  Parse error: {}", error);
             }

@@ -63,25 +63,21 @@ let options = DomExpressionsOptions::new("solid-js/web");
 let transformer = DomExpressions::new(&allocator, options);
 ```
 
-Produces clean, declarative output with automatically injected helper functions:
+Produces clean, direct output using the runtime API:
 ```javascript
-// Injected helpers that wrap the original runtime API
-import { template as _template, insert as _insert, effect as _effect, /* ... */ } from "solid-js/web";
+// Simple import - no complex helpers
+import { template as _$template } from "solid-js/web";
 
-function $template(html) { return _template(html); }
-function $clone(tmpl) { return tmpl(); }
-function $bind(element, path, bindings) { /* ... wraps original API ... */ }
-
-// Your transformed code
-const _tmpl$ = $template(`<div id="main"><h1>...</h1></div>`);
+// Your transformed code - clean and direct
+const _tmpl$ = _$template(`<div id="main"><h1>...</h1></div>`);
 const element = (() => {
-  const _root$ = $clone(_tmpl$);
-  $bind(_root$, [0], { id: () => dynamicId });
-  return _root$;
+  const _el$ = _tmpl$();
+  // Dynamic content uses runtime functions directly
+  return _el$;
 })();
 ```
 
-**Note:** The transformer automatically injects helper functions that wrap the original dom-expressions API (like `template`, `insert`, `effect` from solid-js/web). This means you don't need a separate polyfill package - everything is self-contained in the transformed output.
+**Philosophy:** The modern transform uses a universal, clean approach - importing and using the runtime API directly without wrapper helpers. This makes the output both transformer-friendly (easy to generate) and runtime-friendly (fast to execute).
 
 ### Babel-Compatible Transform
 

@@ -21,13 +21,13 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
     }
 
     fn exit_program(&mut self, program: &mut Program<'a>, _ctx: &mut TraverseCtx<'a, ()>) {
-        // Inject helper and template declarations at the top of the program if any templates were created
-        // The helper is only injected when templates exist because it's only needed when JSX is transformed
-        // The helper_injected flag prevents duplicate injection in case exit_program is called multiple times
+        // Inject imports and template declarations at the top when templates exist
+        // Modern approach: Just import runtime functions, use them directly
+        // No complex helpers - clean, transformer-friendly, runtime-friendly
         if !self.templates.is_empty() && !self.helper_injected {
             let mut new_stmts = Vec::new();
             
-            // 1. Add helper function statements (import + $template, $clone, $bind definitions)
+            // 1. Add import statement (just runtime imports, no helper functions)
             let helper_stmts = self.create_helper_statements();
             new_stmts.extend(helper_stmts);
 
@@ -46,7 +46,7 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
             // Replace program body
             program.body = OxcVec::from_iter_in(all_stmts, self.allocator);
             
-            // Mark helper as injected to prevent duplicate injection
+            // Mark as injected to prevent duplicates
             self.helper_injected = true;
         }
     }
@@ -73,13 +73,13 @@ impl<'a> DomExpressions<'a> {
         
         self.templates.push(template);
 
-        // For now, create a simple IIFE with $clone and return
-        // Full implementation would add $bind calls for dynamic content
+        // For now, create a simple IIFE that clones the template
+        // Future: add dynamic content handling based on template.dynamic_slots
         let mut statements = Vec::new();
 
-        // const _root$ = $clone(_tmpl$);
+        // const _el$ = _tmpl$();
         let clone_call = self.create_clone_call(self.allocator.alloc_str(&template_var));
-        let root_var = self.allocator.alloc_str("_root$");
+        let el_var = self.allocator.alloc_str("_el$");
 
         let declarator = VariableDeclarator {
             span: SPAN,
@@ -88,7 +88,7 @@ impl<'a> DomExpressions<'a> {
                 kind: BindingPatternKind::BindingIdentifier(Box::new_in(
                     BindingIdentifier {
                         span: SPAN,
-                        name: Atom::from(root_var),
+                        name: Atom::from(el_var),
                         symbol_id: Default::default(),
                     },
                     self.allocator,
@@ -113,11 +113,11 @@ impl<'a> DomExpressions<'a> {
             self.allocator,
         )));
 
-        // TODO: Add $bind calls for dynamic content based on template.dynamic_slots
-        // For now, we just return the cloned template without bindings
+        // TODO: Add dynamic content handling based on template.dynamic_slots
+        // For now, we just return the cloned element
 
         // Create IIFE
-        let iife = self.create_iife(statements, root_var);
+        let iife = self.create_iife(statements, el_var);
         
         Some(iife)
     }
