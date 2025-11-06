@@ -103,15 +103,20 @@ The third parameter to `$bind` is an object that can contain:
 
 ## Implementation Status
 
-The modern `transform` module is currently a stub/placeholder with documentation.
-For a working implementation, use the `compat2` module which provides babel-compatible output.
+The modern `transform` module now injects helper functions that wrap the original dom-expressions API.
+When using `DomExpressions`, the transformer will automatically inject:
+- Import statements from the original runtime (e.g., `solid-js/web`)
+- Helper functions `$template`, `$clone`, and `$bind` that wrap the original API
+
+This allows the modern declarative output format to work with existing dom-expressions runtime libraries
+without requiring a separate polyfill package.
 
 ## Usage
 
 ```rust
 use oxc_dom_expressions::{DomExpressions, DomExpressionsOptions, DomExpressionsCompat2};
 
-// For modern output (stub - not yet implemented)
+// For modern output with injected helpers
 let modern_transformer = DomExpressions::new(&allocator, options);
 
 // For babel-compatible output (fully implemented)

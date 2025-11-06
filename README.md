@@ -59,13 +59,20 @@ use oxc_allocator::Allocator;
 use oxc_dom_expressions::{DomExpressions, DomExpressionsOptions};
 
 let allocator = Allocator::default();
-let options = DomExpressionsOptions::new("solid-runtime/polyfill");
+let options = DomExpressionsOptions::new("solid-js/web");
 let transformer = DomExpressions::new(&allocator, options);
 ```
 
-Produces clean, declarative output:
+Produces clean, declarative output with automatically injected helper functions:
 ```javascript
-import { $template, $clone, $bind } from "solid-runtime/polyfill";
+// Injected helpers that wrap the original runtime API
+import { template as _template, insert as _insert, effect as _effect, /* ... */ } from "solid-js/web";
+
+function $template(html) { return _template(html); }
+function $clone(tmpl) { return tmpl(); }
+function $bind(element, path, bindings) { /* ... wraps original API ... */ }
+
+// Your transformed code
 const _tmpl$ = $template(`<div id="main"><h1>...</h1></div>`);
 const element = (() => {
   const _root$ = $clone(_tmpl$);
@@ -73,6 +80,8 @@ const element = (() => {
   return _root$;
 })();
 ```
+
+**Note:** The transformer automatically injects helper functions that wrap the original dom-expressions API (like `template`, `insert`, `effect` from solid-js/web). This means you don't need a separate polyfill package - everything is self-contained in the transformed output.
 
 ### Babel-Compatible Transform
 
