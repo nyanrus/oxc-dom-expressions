@@ -1,10 +1,10 @@
 //! Modern transformer for DOM expressions
 //!
 //! This module implements a modern, declarative JSX to DOM transformation using
-//! $template, $clone, and $bind runtime functions from solid-runtime/polyfill.
+//! $template, $clone, and $bind runtime functions that wrap the original solid-js/web API.
 
 use oxc_allocator::Allocator;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[cfg(feature = "opt")]
 use crate::opt::{TemplateOptimizer, TemplateStats};
@@ -13,6 +13,7 @@ use crate::template::Template;
 
 // Sub-modules
 mod codegen;
+mod helper;
 mod traverse_impl;
 
 /// The modern DOM expressions transformer
@@ -28,6 +29,10 @@ pub struct DomExpressions<'a> {
     /// Optimizer for template analysis
     #[cfg(feature = "opt")]
     pub(super) optimizer: TemplateOptimizer,
+    /// Whether helper functions have been injected
+    pub(super) helper_injected: bool,
+    /// Track which runtime functions we need to import
+    pub(super) imports_needed: HashSet<String>,
 }
 
 impl<'a> DomExpressions<'a> {
@@ -41,6 +46,8 @@ impl<'a> DomExpressions<'a> {
             template_counter: 0,
             #[cfg(feature = "opt")]
             optimizer: TemplateOptimizer::new(),
+            helper_injected: false,
+            imports_needed: HashSet::new(),
         }
     }
 
@@ -80,5 +87,10 @@ impl<'a> DomExpressions<'a> {
             self.template_map.insert(html.to_string(), var.clone());
             var
         }
+    }
+    
+    /// Mark a runtime function as needed for import
+    pub(super) fn add_import(&mut self, name: &str) {
+        self.imports_needed.insert(name.to_string());
     }
 }

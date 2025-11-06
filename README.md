@@ -59,20 +59,25 @@ use oxc_allocator::Allocator;
 use oxc_dom_expressions::{DomExpressions, DomExpressionsOptions};
 
 let allocator = Allocator::default();
-let options = DomExpressionsOptions::new("solid-runtime/polyfill");
+let options = DomExpressionsOptions::new("solid-js/web");
 let transformer = DomExpressions::new(&allocator, options);
 ```
 
-Produces clean, declarative output:
+Produces clean, direct output using the runtime API:
 ```javascript
-import { $template, $clone, $bind } from "solid-runtime/polyfill";
-const _tmpl$ = $template(`<div id="main"><h1>...</h1></div>`);
+// Simple import - no complex helpers
+import { template as _$template } from "solid-js/web";
+
+// Your transformed code - clean and direct
+const _tmpl$ = _$template(`<div id="main"><h1>...</h1></div>`);
 const element = (() => {
-  const _root$ = $clone(_tmpl$);
-  $bind(_root$, [0], { id: () => dynamicId });
-  return _root$;
+  const _el$ = _tmpl$();
+  // Dynamic content uses runtime functions directly
+  return _el$;
 })();
 ```
+
+**Philosophy:** The modern transform uses a universal, clean approach - importing and using the runtime API directly without wrapper helpers. This makes the output both transformer-friendly (easy to generate) and runtime-friendly (fast to execute).
 
 ### Babel-Compatible Transform
 

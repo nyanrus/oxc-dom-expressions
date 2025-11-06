@@ -21,12 +21,15 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
     }
 
     fn exit_program(&mut self, program: &mut Program<'a>, _ctx: &mut TraverseCtx<'a, ()>) {
-        // Inject imports and template declarations at the top of the program if any templates were created
-        if !self.templates.is_empty() {
+        // Inject imports and template declarations at the top when templates exist
+        // Modern approach: Just import runtime functions, use them directly
+        // No complex helpers - clean, transformer-friendly, runtime-friendly
+        if !self.templates.is_empty() && !self.helper_injected {
             let mut new_stmts = Vec::new();
             
-            // 1. Add import statement
-            new_stmts.push(self.create_modern_import_statement());
+            // 1. Add import statement (just runtime imports, no helper functions)
+            let helper_stmts = self.create_helper_statements();
+            new_stmts.extend(helper_stmts);
 
             // 2. Add template variable declarations
             let template_decls = self.create_template_declarations();
@@ -42,13 +45,19 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
 
             // Replace program body
             program.body = OxcVec::from_iter_in(all_stmts, self.allocator);
+            
+            // Mark as injected to prevent duplicates
+            self.helper_injected = true;
         }
     }
 }
 
 impl<'a> DomExpressions<'a> {
-    /// Transform a JSX element to modern format
+    /// Transform a JSX element to modern format with full feature support
     fn transform_jsx_element_modern(&mut self, jsx_elem: &JSXElement<'a>) -> Option<Expression<'a>> {
+        use oxc_allocator::CloneIn;
+        use crate::template::SlotType;
+        
         // Build template from JSX
         let template = build_template_with_options(jsx_elem, Some(&self.options));
 
@@ -65,54 +74,205 @@ impl<'a> DomExpressions<'a> {
         #[cfg(feature = "opt")]
         self.optimizer.record_template(template.clone());
         
-        self.templates.push(template);
+        let has_dynamic_content = !template.dynamic_slots.is_empty();
+        
+        if !has_dynamic_content {
+            // Simple static template - just clone and return
+            self.templates.push(template);
+            
+            let mut statements = Vec::new();
+            let clone_call = self.create_clone_call(self.allocator.alloc_str(&template_var));
+            let el_var = self.allocator.alloc_str("_el$");
 
-        // For now, create a simple IIFE with $clone and return
-        // Full implementation would add $bind calls for dynamic content
-        let mut statements = Vec::new();
-
-        // const _root$ = $clone(_tmpl$);
-        let clone_call = self.create_clone_call(self.allocator.alloc_str(&template_var));
-        let root_var = self.allocator.alloc_str("_root$");
-
-        let declarator = VariableDeclarator {
-            span: SPAN,
-            kind: VariableDeclarationKind::Const,
-            id: BindingPattern {
-                kind: BindingPatternKind::BindingIdentifier(Box::new_in(
-                    BindingIdentifier {
-                        span: SPAN,
-                        name: Atom::from(root_var),
-                        symbol_id: Default::default(),
-                    },
-                    self.allocator,
-                )),
-                type_annotation: None,
-                optional: false,
-            },
-            init: Some(clone_call),
-            definite: false,
-        };
-
-        let mut declarators = OxcVec::new_in(self.allocator);
-        declarators.push(declarator);
-
-        statements.push(Statement::VariableDeclaration(Box::new_in(
-            VariableDeclaration {
+            let declarator = VariableDeclarator {
                 span: SPAN,
                 kind: VariableDeclarationKind::Const,
-                declarations: declarators,
-                declare: false,
-            },
-            self.allocator,
-        )));
+                id: BindingPattern {
+                    kind: BindingPatternKind::BindingIdentifier(Box::new_in(
+                        BindingIdentifier {
+                            span: SPAN,
+                            name: Atom::from(el_var),
+                            symbol_id: Default::default(),
+                        },
+                        self.allocator,
+                    )),
+                    type_annotation: None,
+                    optional: false,
+                },
+                init: Some(clone_call),
+                definite: false,
+            };
 
-        // TODO: Add $bind calls for dynamic content based on template.dynamic_slots
-        // For now, we just return the cloned template without bindings
+            let mut declarators = OxcVec::new_in(self.allocator);
+            declarators.push(declarator);
 
-        // Create IIFE
-        let iife = self.create_iife(statements, root_var);
-        
-        Some(iife)
+            statements.push(Statement::VariableDeclaration(Box::new_in(
+                VariableDeclaration {
+                    span: SPAN,
+                    kind: VariableDeclarationKind::Const,
+                    declarations: declarators,
+                    declare: false,
+                },
+                self.allocator,
+            )));
+
+            let iife = self.create_iife(statements, el_var);
+            Some(iife)
+        } else {
+            // Has dynamic content - extract expressions and generate binding code
+            let mut expressions = Vec::new();
+            self.extract_expressions_from_jsx(jsx_elem, &mut expressions);
+            
+            self.templates.push(template.clone());
+            
+            // Generate statements for the IIFE
+            let mut statements = Vec::new();
+            
+            // const _el$ = _tmpl$();
+            let clone_call = self.create_clone_call(self.allocator.alloc_str(&template_var));
+            let el_var = self.allocator.alloc_str("_el$");
+
+            let declarator = VariableDeclarator {
+                span: SPAN,
+                kind: VariableDeclarationKind::Const,
+                id: BindingPattern {
+                    kind: BindingPatternKind::BindingIdentifier(Box::new_in(
+                        BindingIdentifier {
+                            span: SPAN,
+                            name: Atom::from(el_var),
+                            symbol_id: Default::default(),
+                        },
+                        self.allocator,
+                    )),
+                    type_annotation: None,
+                    optional: false,
+                },
+                init: Some(clone_call),
+                definite: false,
+            };
+
+            let mut declarators = OxcVec::new_in(self.allocator);
+            declarators.push(declarator);
+
+            statements.push(Statement::VariableDeclaration(Box::new_in(
+                VariableDeclaration {
+                    span: SPAN,
+                    kind: VariableDeclarationKind::Const,
+                    declarations: declarators,
+                    declare: false,
+                },
+                self.allocator,
+            )));
+            
+            // Generate binding code for each dynamic slot
+            let mut expr_index = 0;
+            for slot in &template.dynamic_slots {
+                if expr_index >= expressions.len() {
+                    break;
+                }
+                
+                let element_expr = self.navigate_to_element(el_var, &slot.path);
+                
+                match &slot.slot_type {
+                    SlotType::TextContent => {
+                        self.add_import("insert");
+                        
+                        // For text content, use the slot's path (parent element) and marker
+                        let parent_expr = self.navigate_to_element(el_var, &slot.path);
+                        let marker_expr = if let Some(marker_path) = &slot.marker_path {
+                            Some(self.navigate_to_element(el_var, marker_path))
+                        } else {
+                            None
+                        };
+                        
+                        let insert_stmt = self.create_insert_call(
+                            parent_expr,
+                            expressions[expr_index].clone_in(self.allocator),
+                            marker_expr,
+                        );
+                        statements.push(insert_stmt);
+                        expr_index += 1;
+                    }
+                    SlotType::Attribute(attr_name) => {
+                        self.add_import("setAttribute");
+                        self.add_import("effect");
+                        let attr_stmt = self.create_set_attribute_effect(
+                            element_expr,
+                            self.allocator.alloc_str(attr_name),
+                            expressions[expr_index].clone_in(self.allocator),
+                        );
+                        statements.push(attr_stmt);
+                        expr_index += 1;
+                    }
+                    SlotType::EventHandler(event_name) => {
+                        self.add_import("addEventListener");
+                        let event_stmt = self.create_event_listener(
+                            element_expr,
+                            self.allocator.alloc_str(event_name),
+                            expressions[expr_index].clone_in(self.allocator),
+                        );
+                        statements.push(event_stmt);
+                        expr_index += 1;
+                    }
+                    _ => {
+                        // TODO: Implement other slot types
+                        expr_index += 1;
+                    }
+                }
+            }
+            
+            let iife = self.create_iife(statements, el_var);
+            Some(iife)
+        }
+    }
+    
+    /// Extract expressions from JSX element
+    fn extract_expressions_from_jsx(&self, jsx_elem: &JSXElement<'a>, expressions: &mut Vec<Expression<'a>>) {
+        use oxc_allocator::CloneIn;
+
+        for attr in &jsx_elem.opening_element.attributes {
+            if let JSXAttributeItem::Attribute(attr) = attr {
+                if let Some(JSXAttributeValue::ExpressionContainer(container)) = &attr.value {
+                    match &container.expression {
+                        JSXExpression::StringLiteral(_)
+                        | JSXExpression::NumericLiteral(_)
+                        | JSXExpression::EmptyExpression(_) => {}
+                        expr => {
+                            if let Some(expr_ref) = expr.as_expression() {
+                                expressions.push(expr_ref.clone_in(self.allocator));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for child in &jsx_elem.children {
+            self.extract_expressions_from_child(child, expressions);
+        }
+    }
+
+    /// Extract expressions from a JSX child
+    fn extract_expressions_from_child(&self, child: &JSXChild<'a>, expressions: &mut Vec<Expression<'a>>) {
+        use oxc_allocator::CloneIn;
+
+        match child {
+            JSXChild::Element(elem) => {
+                self.extract_expressions_from_jsx(elem, expressions);
+            }
+            JSXChild::ExpressionContainer(container) => {
+                match &container.expression {
+                    JSXExpression::StringLiteral(_)
+                    | JSXExpression::NumericLiteral(_)
+                    | JSXExpression::EmptyExpression(_) => {}
+                    expr => {
+                        if let Some(expr_ref) = expr.as_expression() {
+                            expressions.push(expr_ref.clone_in(self.allocator));
+                        }
+                    }
+                }
+            }
+            JSXChild::Text(_) | JSXChild::Fragment(_) | JSXChild::Spread(_) => {}
+        }
     }
 }

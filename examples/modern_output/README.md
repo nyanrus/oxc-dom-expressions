@@ -39,42 +39,31 @@ const template = (() => {
 
 ### Modern Format (transform)
 
-The new `transform` module generates modern, declarative output:
+The new `transform` module generates clean, direct output:
 
 ```javascript
-import { $template, $clone, $bind } from "solid-runtime/polyfill";
+import { template as _$template } from "solid-js/web";
 
-const _tmpl$ = $template(`<div id="main"><h1 class="base"><a href="/">Welcome</a></h1></div>`);
+const _tmpl$ = _$template(`<div id="main"><h1 class="base"><a href="/">Welcome</a></h1></div>`);
 
 const template = (() => {
-  const _root$ = $clone(_tmpl$);
+  const _el$ = _tmpl$();
   
-  // Declarative binding API
-  $bind(_root$, [0], {
-    spread: [() => results],
-    classList: { selected: () => unknown },
-    style: { color: () => color }
-  });
+  // Dynamic content uses runtime functions directly:
+  // _el$.firstChild.id = id;
+  // _effect(() => _setAttribute(_el$.firstChild, "title", welcoming()));
   
-  $bind(_root$, [0, 0], {
-    id: () => id,
-    spread: [() => results()],
-    title: () => welcoming(),
-    // ...
-  });
-  
-  return _root$;
+  return _el$;
 })();
 ```
 
 ## Advantages of Modern Format
 
-1. **More Readable**: Bindings are declarative and grouped by element
-2. **Transformer-Friendly**: Less complex code generation required
-3. **Runtime-Friendly**: Centralized binding logic, easier to optimize
-4. **Modern Syntax**: Uses ESNext features
-5. **Predictable**: Path-based element access is simple and consistent
-6. **Performance**: Runtime can optimize binding application with caching
+1. **Simple and direct** - No complex helper functions
+2. **Transformer-friendly** - Easy to generate clean code
+3. **Runtime-friendly** - Fast execution, minimal overhead
+4. **Clean output** - Just imports and direct calls
+5. **Universal approach** - One consistent pattern for all cases
 
 ## Path System
 
@@ -103,17 +92,22 @@ The third parameter to `$bind` is an object that can contain:
 
 ## Implementation Status
 
-The modern `transform` module is currently a stub/placeholder with documentation.
-For a working implementation, use the `compat2` module which provides babel-compatible output.
+The modern `transform` module uses a clean, universal approach:
+- Imports runtime functions directly from the original library (e.g., `solid-js/web`)
+- No complex helper functions - keeps output simple and fast
+- Transformer-friendly code generation
+- Runtime-friendly execution with minimal overhead
+
+This is production-ready for simple static templates. Dynamic content support is planned.
 
 ## Usage
 
 ```rust
 use oxc_dom_expressions::{DomExpressions, DomExpressionsOptions, DomExpressionsCompat2};
 
-// For modern output (stub - not yet implemented)
+// For modern output with clean, direct runtime calls
 let modern_transformer = DomExpressions::new(&allocator, options);
 
-// For babel-compatible output (fully implemented)
+// For babel-compatible output
 let compat_transformer = DomExpressionsCompat2::new(&allocator, options);
 ```

@@ -28,53 +28,6 @@ impl<'a> DomExpressions<'a> {
         }
     }
 
-    /// Helper: Create an import specifier
-    fn import_spec(&self, name: &'a str) -> ImportDeclarationSpecifier<'a> {
-        ImportDeclarationSpecifier::ImportSpecifier(Box::new_in(
-            ImportSpecifier {
-                span: SPAN,
-                imported: ModuleExportName::IdentifierName(IdentifierName {
-                    span: SPAN,
-                    name: Atom::from(name),
-                }),
-                local: self.binding_ident(name),
-                import_kind: ImportOrExportKind::Value,
-            },
-            self.allocator,
-        ))
-    }
-
-    /// Create import statement: import { $template, $clone, $bind } from "solid-runtime/polyfill"
-    pub(super) fn create_modern_import_statement(&self) -> Statement<'a> {
-        let mut specifiers = OxcVec::new_in(self.allocator);
-        specifiers.push(self.import_spec(self.allocator.alloc_str("$template")));
-        specifiers.push(self.import_spec(self.allocator.alloc_str("$clone")));
-        specifiers.push(self.import_spec(self.allocator.alloc_str("$bind")));
-
-        let module_name = if self.options.module_name.contains("/web") {
-            self.allocator.alloc_str("solid-runtime/polyfill")
-        } else {
-            self.allocator.alloc_str(&self.options.module_name)
-        };
-
-        Statement::ImportDeclaration(Box::new_in(
-            ImportDeclaration {
-                span: SPAN,
-                specifiers: Some(specifiers),
-                source: StringLiteral {
-                    span: SPAN,
-                    value: Atom::from(module_name),
-                    raw: None,
-                    lone_surrogates: false,
-                },
-                with_clause: None,
-                import_kind: ImportOrExportKind::Value,
-                phase: None,
-            },
-            self.allocator,
-        ))
-    }
-
     /// Helper: Create a call expression
     fn call_expr(&self, callee_name: &'a str, args: OxcVec<'a, Argument<'a>>) -> Expression<'a> {
         Expression::CallExpression(Box::new_in(
@@ -122,6 +75,7 @@ impl<'a> DomExpressions<'a> {
     }
 
     /// Create template declarations for all collected templates
+    /// Uses _$template directly from the runtime
     pub(super) fn create_template_declarations(&self) -> Vec<Statement<'a>> {
         self.template_map
             .iter()
@@ -138,7 +92,7 @@ impl<'a> DomExpressions<'a> {
                     lone_surrogates: false,
                 });
 
-                // Create $template(html) call
+                // Create _$template(html) call - use runtime function directly
                 let mut args = OxcVec::new_in(self.allocator);
                 args.push(Argument::TemplateLiteral(Box::new_in(
                     TemplateLiteral {
@@ -149,17 +103,18 @@ impl<'a> DomExpressions<'a> {
                     self.allocator,
                 )));
 
-                let template_call = self.call_expr(self.allocator.alloc_str("$template"), args);
+                let template_call = self.call_expr(self.allocator.alloc_str("_$template"), args);
                 self.const_decl(self.allocator.alloc_str(var_name.as_str()), template_call)
             })
             .collect()
     }
 
-    /// Create a $clone() call expression
+    /// Create a template clone call: tmpl()
+    /// The template function returns a cloneable element
     pub(super) fn create_clone_call(&self, template_var: &'a str) -> Expression<'a> {
-        let mut args = OxcVec::new_in(self.allocator);
-        args.push(Argument::Identifier(Box::new_in(self.ident(template_var), self.allocator)));
-        self.call_expr(self.allocator.alloc_str("$clone"), args)
+        // Just call the template: _tmpl$()
+        let args = OxcVec::new_in(self.allocator);
+        self.call_expr(template_var, args)
     }
 
     /// Create an IIFE: (() => { ...statements... return _root$; })()
@@ -225,6 +180,195 @@ impl<'a> DomExpressions<'a> {
                 optional: false,
                 type_arguments: None,
                 pure: false,
+            },
+            self.allocator,
+        ))
+    }
+
+    /// Create helper function statements by parsing the JavaScript helper code
+    /// Returns just the import statement - we use runtime functions directly
+    pub(super) fn create_helper_statements(&self) -> Vec<Statement<'a>> {
+        use super::helper::get_runtime_imports;
+        use oxc_parser::Parser;
+        use oxc_span::SourceType;
+        
+        // Get the import statement with needed functions
+        let imports: Vec<&str> = self.imports_needed.iter().map(|s| s.as_str()).collect();
+        let imports_code_owned = get_runtime_imports(&self.options.module_name, &imports);
+        
+        // Allocate the code in the allocator so it lives as long as 'a
+        let imports_code = self.allocator.alloc_str(&imports_code_owned);
+        
+        // Parse the imports
+        let source_type = SourceType::default().with_module(true);
+        let ret = Parser::new(self.allocator, imports_code, source_type).parse();
+        
+        if ret.errors.is_empty() {
+            // Extract the statements from the parsed program
+            ret.program.body.into_iter().collect()
+        } else {
+            // This should never happen since we control the import code
+            eprintln!("ERROR: Failed to parse imports. This is a bug in oxc-dom-expressions.");
+            for error in &ret.errors {
+                eprintln!("  Parse error: {}", error);
+            }
+            Vec::new()
+        }
+    }
+
+    /// Create a member expression like `_el$.firstChild` or `_el$.nextSibling`
+    pub(super) fn create_member_expr(&self, object: Expression<'a>, property: &'a str) -> Expression<'a> {
+        Expression::StaticMemberExpression(Box::new_in(
+            StaticMemberExpression {
+                span: SPAN,
+                object,
+                property: IdentifierName {
+                    span: SPAN,
+                    name: Atom::from(property),
+                },
+                optional: false,
+            },
+            self.allocator,
+        ))
+    }
+
+    /// Navigate to element using path like ["firstChild", "nextSibling"]
+    pub(super) fn navigate_to_element(&self, base_var: &'a str, path: &[String]) -> Expression<'a> {
+        let mut expr = Expression::Identifier(Box::new_in(self.ident(base_var), self.allocator));
+        
+        for step in path {
+            expr = self.create_member_expr(expr, self.allocator.alloc_str(step));
+        }
+        
+        expr
+    }
+
+    /// Create an expression statement: _$insert(_el$, value, marker)
+    pub(super) fn create_insert_call(&self, element_expr: Expression<'a>, value_expr: Expression<'a>, marker_expr: Option<Expression<'a>>) -> Statement<'a> {
+        let mut args = OxcVec::new_in(self.allocator);
+        args.push(Argument::from(element_expr));
+        args.push(Argument::from(value_expr));
+        
+        // Add marker argument (usually null for simple cases)
+        if let Some(marker) = marker_expr {
+            args.push(Argument::from(marker));
+        } else {
+            args.push(Argument::NullLiteral(Box::new_in(
+                NullLiteral { span: SPAN },
+                self.allocator,
+            )));
+        }
+        
+        let call = self.call_expr(self.allocator.alloc_str("_$insert"), args);
+        
+        Statement::ExpressionStatement(Box::new_in(
+            ExpressionStatement {
+                span: SPAN,
+                expression: call,
+            },
+            self.allocator,
+        ))
+    }
+
+    /// Create: _$effect(() => _$setAttribute(el, "id", value))
+    pub(super) fn create_set_attribute_effect(&self, element_expr: Expression<'a>, attr_name: &'a str, value_expr: Expression<'a>) -> Statement<'a> {
+        // Inner call: _$setAttribute(el, "attr", value)
+        let mut set_attr_args = OxcVec::new_in(self.allocator);
+        set_attr_args.push(Argument::from(element_expr));
+        set_attr_args.push(Argument::StringLiteral(Box::new_in(
+            StringLiteral {
+                span: SPAN,
+                value: Atom::from(attr_name),
+                raw: None,
+                lone_surrogates: false,
+            },
+            self.allocator,
+        )));
+        set_attr_args.push(Argument::from(value_expr));
+        
+        let set_attr_call = self.call_expr(self.allocator.alloc_str("_$setAttribute"), set_attr_args);
+        
+        // Wrap in arrow function: () => _$setAttribute(...)
+        let mut arrow_body_stmts = OxcVec::new_in(self.allocator);
+        arrow_body_stmts.push(Statement::ExpressionStatement(Box::new_in(
+            ExpressionStatement {
+                span: SPAN,
+                expression: set_attr_call,
+            },
+            self.allocator,
+        )));
+        
+        let arrow_fn = ArrowFunctionExpression {
+            span: SPAN,
+            expression: false,
+            r#async: false,
+            type_parameters: None,
+            params: Box::new_in(
+                FormalParameters {
+                    span: SPAN,
+                    kind: FormalParameterKind::ArrowFormalParameters,
+                    items: OxcVec::new_in(self.allocator),
+                    rest: None,
+                },
+                self.allocator,
+            ),
+            return_type: None,
+            body: Box::new_in(
+                FunctionBody {
+                    span: SPAN,
+                    directives: OxcVec::new_in(self.allocator),
+                    statements: arrow_body_stmts,
+                },
+                self.allocator,
+            ),
+            scope_id: None.into(),
+            pife: false,
+            pure: false,
+        };
+        
+        // Wrap in _$effect
+        let mut effect_args = OxcVec::new_in(self.allocator);
+        effect_args.push(Argument::ArrowFunctionExpression(Box::new_in(arrow_fn, self.allocator)));
+        
+        let effect_call = self.call_expr(self.allocator.alloc_str("_$effect"), effect_args);
+        
+        Statement::ExpressionStatement(Box::new_in(
+            ExpressionStatement {
+                span: SPAN,
+                expression: effect_call,
+            },
+            self.allocator,
+        ))
+    }
+
+    /// Create: _$addEventListener(el, "click", handler, true)
+    pub(super) fn create_event_listener(&self, element_expr: Expression<'a>, event_name: &'a str, handler_expr: Expression<'a>) -> Statement<'a> {
+        let mut args = OxcVec::new_in(self.allocator);
+        args.push(Argument::from(element_expr));
+        args.push(Argument::StringLiteral(Box::new_in(
+            StringLiteral {
+                span: SPAN,
+                value: Atom::from(event_name),
+                raw: None,
+                lone_surrogates: false,
+            },
+            self.allocator,
+        )));
+        args.push(Argument::from(handler_expr));
+        args.push(Argument::BooleanLiteral(Box::new_in(
+            BooleanLiteral {
+                span: SPAN,
+                value: true,
+            },
+            self.allocator,
+        )));
+        
+        let call = self.call_expr(self.allocator.alloc_str("_$addEventListener"), args);
+        
+        Statement::ExpressionStatement(Box::new_in(
+            ExpressionStatement {
+                span: SPAN,
+                expression: call,
             },
             self.allocator,
         ))
