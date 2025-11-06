@@ -22,6 +22,8 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
 
     fn exit_program(&mut self, program: &mut Program<'a>, _ctx: &mut TraverseCtx<'a, ()>) {
         // Inject helper and template declarations at the top of the program if any templates were created
+        // The helper is only injected when templates exist because it's only needed when JSX is transformed
+        // The helper_injected flag prevents duplicate injection in case exit_program is called multiple times
         if !self.templates.is_empty() && !self.helper_injected {
             let mut new_stmts = Vec::new();
             
@@ -44,7 +46,7 @@ impl<'a> Traverse<'a, ()> for DomExpressions<'a> {
             // Replace program body
             program.body = OxcVec::from_iter_in(all_stmts, self.allocator);
             
-            // Mark helper as injected
+            // Mark helper as injected to prevent duplicate injection
             self.helper_injected = true;
         }
     }

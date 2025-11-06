@@ -204,7 +204,12 @@ impl<'a> DomExpressions<'a> {
             // Extract the statements from the parsed program
             ret.program.body.into_iter().collect()
         } else {
-            // If parsing fails, return empty vec (shouldn't happen with our known-good helper code)
+            // This should never happen since we control the helper code
+            // But if it does, log the errors for debugging
+            eprintln!("ERROR: Failed to parse helper code. This is a bug in oxc-dom-expressions.");
+            for error in &ret.errors {
+                eprintln!("  Parse error: {}", error);
+            }
             Vec::new()
         }
     }

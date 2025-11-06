@@ -79,6 +79,9 @@ function $bind(element, path, bindings) {{
     }}
     
     if (Object.keys(dynamicStyles).length > 0) {{
+      // Note: This recreates the entire styles object on every effect run.
+      // The runtime (solid-js/web) handles diffing and only updates changed properties.
+      // If needed, this could be optimized with memoization at the cost of complexity.
       _effect(_p => _style(target, Object.fromEntries(
         Object.entries(dynamicStyles).map(([k, v]) => [k, v()])
       ), _p));
