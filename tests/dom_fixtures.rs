@@ -6,7 +6,7 @@
 use oxc_allocator::Allocator;
 use oxc_codegen::Codegen;
 use oxc_dom_expressions::compat::BabelOutputNormalizer;
-use oxc_dom_expressions::{DomExpressions, DomExpressionsOptions};
+use oxc_dom_expressions::{DomExpressionsCompat2, DomExpressionsOptions};
 use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
 use oxc_span::SourceType;
@@ -47,7 +47,7 @@ fn transform_jsx(source: &str) -> Result<String, String> {
         .with_delegate_events(true)
         .with_generate(oxc_dom_expressions::GenerateMode::Dom);
 
-    let mut transformer = DomExpressions::new(&allocator, options);
+    let mut transformer = DomExpressionsCompat2::new(&allocator, options);
     traverse_mut(&mut transformer, &allocator, &mut program, scoping, ());
 
     // Generate code from the transformed AST
