@@ -172,9 +172,12 @@ export function oxcSolid(options = {}) {
     async transform(code, id) {
       if (!filter(id)) return null;
       
-      // Call oxc-dom-expressions via FFI or WASM
-      // This would require exposing the Rust code as a Node.js module
-      const transformed = await transformWithOxc(code, options);
+      // PSEUDOCODE: This would call oxc-dom-expressions via FFI or WASM
+      // Actual implementation requires Node.js bindings (N-API or WASM)
+      // Example integration points:
+      //   - N-API: const oxcTransform = require('oxc-dom-expressions-node');
+      //   - WASM: const { transform } = await import('oxc-dom-expressions-wasm');
+      const transformed = await transformWithOxc(code, options); // Placeholder
       
       return {
         code: transformed,

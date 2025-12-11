@@ -203,7 +203,7 @@ Expected performance improvement: **2-10x faster** compilation times for large p
 
 ### Medium Priority
 
-- [ ] Match exact babel output format (variable naming)
+- [ ] Match exact babel output format (improve consistency in variable naming, import ordering, and whitespace - purely cosmetic differences that don't affect functionality)
 - [ ] Optimize style handling to match babel approach
 - [ ] Add CLI tool for standalone usage
 

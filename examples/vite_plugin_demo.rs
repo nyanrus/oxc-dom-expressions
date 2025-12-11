@@ -1,5 +1,14 @@
 /// Demo showing how oxc-dom-expressions can be used as a drop-in replacement for vite-plugin-solid
-/// This example transforms typical Solid.js code and shows it works with the solid-js runtime.
+/// 
+/// This example demonstrates the transformation of typical Solid.js patterns:
+/// - Simple components with props
+/// - Interactive components with event handlers
+/// - Conditional rendering (Show component)
+/// - List rendering (For component)
+/// - Fragments
+/// 
+/// The output shows how JSX is transformed into efficient template-based code
+/// that works with the solid-js/web runtime API.
 
 use oxc_allocator::Allocator;
 use oxc_codegen::Codegen;
@@ -96,14 +105,20 @@ const MultiElement = () => (
     println!("\n📚 Usage: Can be integrated into Vite plugin for fast Solid.js compilation");
 }
 
+// Helper function to transform and print JSX examples
+// Extracted to avoid duplication of source_type configuration
 fn transform_and_print(title: &str, source: &str) {
+    // Standard configuration for Solid.js JSX
+    const SOURCE_TYPE_CONFIG: fn() -> SourceType = || {
+        SourceType::default().with_jsx(true).with_module(true)
+    };
     println!("--- {} ---", title);
     println!("Input:");
     println!("{}", source.trim());
     println!("\nTransformed Output:");
     
     let allocator = Allocator::default();
-    let source_type = SourceType::default().with_jsx(true).with_module(true);
+    let source_type = SOURCE_TYPE_CONFIG();
     let ret = Parser::new(&allocator, source, source_type).parse();
     
     if !ret.errors.is_empty() {
